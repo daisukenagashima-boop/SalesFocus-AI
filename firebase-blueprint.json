@@ -1,0 +1,100 @@
+{
+  "entities": {
+    "Member": {
+      "title": "Member",
+      "description": "Sales team member information",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "email": { "type": "string" }
+      },
+      "required": ["name", "email"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Products or sale items being tracked",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "basePrice": { "type": "number" }
+      },
+      "required": ["name"]
+    },
+    "Target": {
+      "title": "Target",
+      "description": "Monthly goals for products by member",
+      "type": "object",
+      "properties": {
+        "memberId": { "type": "string" },
+        "productId": { "type": "string" },
+        "month": { "type": "string", "format": "YYYY-MM" },
+        "targetCount": { "type": "number" }
+      },
+      "required": ["memberId", "productId", "month", "targetCount"]
+    },
+    "SalesRecord": {
+      "title": "SalesRecord",
+      "description": "Actual sales achievements",
+      "type": "object",
+      "properties": {
+        "memberId": { "type": "string" },
+        "productId": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "count": { "type": "number" },
+        "note": { "type": "string" }
+      },
+      "required": ["memberId", "productId", "date", "count"]
+    },
+    "AIInsight": {
+      "title": "AIInsight",
+      "description": "AI generated feedback and improvements",
+      "type": "object",
+      "properties": {
+        "memberId": { "type": "string" },
+        "month": { "type": "string" },
+        "content": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["memberId", "month", "content"]
+    },
+    "PerformanceMetric": {
+      "title": "PerformanceMetric",
+      "description": "Weekly sales funnel metrics (calls, negotiatons, etc)",
+      "type": "object",
+      "properties": {
+        "memberId": { "type": "string" },
+        "productId": { "type": "string" },
+        "month": { "type": "string" },
+        "weeks": { "type": "object" }
+      },
+      "required": ["memberId", "productId", "month"]
+    }
+  },
+  "firestore": {
+    "members/{memberId}": {
+      "schema": "Member",
+      "description": "Stores user profiles and team members"
+    },
+    "products/{productId}": {
+      "schema": "Product",
+      "description": "Stores the products tracked: ながら介護記録, ながら介護議事録"
+    },
+    "targets/{targetId}": {
+      "schema": "Target",
+      "description": "Stores monthly targets for members"
+    },
+    "salesRecords/{recordId}": {
+      "schema": "SalesRecord",
+      "description": "Stores individual sales entries"
+    },
+    "aiInsights/{insightId}": {
+      "schema": "AIInsight",
+      "description": "Stores AI generated feedback per member/month"
+    },
+    "performanceMetrics/{metricId}": {
+      "schema": "PerformanceMetric",
+      "description": "Stores weekly funnel activity counts"
+    }
+  }
+}
