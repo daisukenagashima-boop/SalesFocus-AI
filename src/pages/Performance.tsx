@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
-import { useData } from '../lib/DataContext';
-import { db } from '../lib/firebase';
+import { useData } from '../lib/DataProvider';
 import { useAuth } from '../lib/AuthContext';
-import { doc, setDoc } from 'firebase/firestore';
 import { format, parseISO } from 'date-fns';
 import { 
   Trophy, 
@@ -94,28 +92,7 @@ export default function Performance() {
 
   const handleValueChange = async (week: number, key: MetricKey, value: string) => {
     if (selectedProductId === 'all') return;
-    const numValue = parseInt(value) || 0;
-    const docId = `${selectedMemberId}_${selectedProductId}_${selectedMonth}`;
-    const docRef = doc(db, 'performanceMetrics', docId);
-
-    const actualCurrent = currentMetrics[0];
-
-    const newWeeks = { ...(actualCurrent?.weeks || {}) };
-    newWeeks[week] = { ...(newWeeks[week] || {}), [key]: numValue };
-
-    setIsSaving(true);
-    try {
-      await setDoc(docRef, {
-        memberId: selectedMemberId,
-        productId: selectedProductId,
-        month: selectedMonth,
-        weeks: newWeeks
-      }, { merge: true });
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsSaving(false);
-    }
+    alert('Mock: 成績データを更新しました（Firebase連携解除中）');
   };
 
   const renderTable = (metrics: MetricRowDef[], title: string) => (

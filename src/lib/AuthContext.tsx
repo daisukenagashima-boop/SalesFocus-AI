@@ -1,12 +1,10 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { 
-  onAuthStateChanged, 
-  signInWithPopup, 
-  GoogleAuthProvider, 
-  signOut,
-  User 
-} from 'firebase/auth';
-import { auth } from './firebase';
+
+interface User {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+}
 
 interface AuthContextType {
   user: User | null;
@@ -17,41 +15,27 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+const DUMMY_USER: User = {
+  uid: 'dummy-user-id',
+  email: 'mock-user@example.com',
+  displayName: 'デモユーザー'
+};
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
-      setLoading(false);
-    });
-    return unsubscribe;
-  }, []);
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(DUMMY_USER);
+  const [loading, setLoading] = useState(false);
 
   const login = async () => {
-    const provider = new GoogleAuthProvider();
-    try {
-      console.log("Attempting login with signInWithPopup...");
-      const result = await signInWithPopup(auth, provider);
-      console.log("Login success:", result.user.email);
-    } catch (error: any) {
-      console.error("Login failed:", error);
-      alert(`Login failed: ${error.message}`);
-    }
+    setUser(DUMMY_USER);
   };
 
   const logout = async () => {
-    try {
-      await signOut(auth);
-    } catch (error) {
-      console.error("Logout failed:", error);
-    }
+    setUser(null);
   };
 
   return (
     <AuthContext.Provider value={{ user, loading, login, logout }}>
-      {!loading && children}
+      {children}
     </AuthContext.Provider>
   );
 }

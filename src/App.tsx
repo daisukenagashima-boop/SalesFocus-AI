@@ -19,8 +19,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 import { AuthProvider, useAuth } from './lib/AuthContext';
-import { DataProvider } from './lib/DataContext';
-import { seedInitialData } from './lib/seed';
+import { DataProvider } from './lib/DataProvider';
 import { cn } from './lib/utils';
 
 import Dashboard from './pages/Dashboard';
@@ -76,18 +75,12 @@ function LoginScreen() {
 }
 
 function AppContent() {
-  const { user, login, logout } = useAuth();
+  const { user, logout } = useAuth();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  useEffect(() => {
-    if (user) {
-      seedInitialData();
-    }
-  }, [user]);
-
   if (!user) {
-    return <LoginScreen />;
+    return <div className="p-10 text-center">Unauthorized</div>; // Should not happen with mock
   }
 
   return (

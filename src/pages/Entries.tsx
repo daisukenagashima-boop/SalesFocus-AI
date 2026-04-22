@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
-import { useData } from '../lib/DataContext';
-import { db } from '../lib/firebase';
-import { collection, addDoc, deleteDoc, doc } from 'firebase/firestore';
+import { useData } from '../lib/DataProvider';
 import { format, parseISO } from 'date-fns';
 import { PlusCircle, Trash2, Calendar, User, Package, Hash, MessageSquare, History, FilterX, Building2, Coins, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -80,17 +78,7 @@ export default function Entries() {
 
     setIsSubmitting(true);
     try {
-      const recordDate = new Date(form.date);
-      // Ensure we preserve current time if it's today, otherwise use start of day
-      const now = new Date();
-      if (format(recordDate, 'yyyy-MM-dd') === format(now, 'yyyy-MM-dd')) {
-        recordDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
-      }
-
-      await addDoc(collection(db, 'salesRecords'), {
-        ...form,
-        date: recordDate.toISOString()
-      });
+      alert('Mock: 実績データの登録をシミュレートしました');
       setForm({ ...form, count: 1, note: '' });
     } catch (error) {
       console.error('Error adding record:', error);
@@ -101,11 +89,7 @@ export default function Entries() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('この実績を削除してもよろしいですか？')) return;
-    try {
-      await deleteDoc(doc(db, 'salesRecords', id));
-    } catch (error) {
-      console.error('Error deleting record:', error);
-    }
+    alert('Mock: レコードを削除しました');
   };
 
   if (loading) return null;

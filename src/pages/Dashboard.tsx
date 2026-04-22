@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useData } from '../lib/DataContext';
+import { useData } from '../lib/DataProvider';
 import { 
   BarChart, 
   Bar, 

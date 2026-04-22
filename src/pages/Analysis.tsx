@@ -1,9 +1,7 @@
 import React, { useState } from 'react';
-import { useData } from '../lib/DataContext';
+import { useData } from '../lib/DataProvider';
 import { analyzeSalesPerformance } from '../lib/gemini';
-import { db } from '../lib/firebase';
 import { useAuth } from '../lib/AuthContext';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { format, parseISO } from 'date-fns';
 import { Sparkles, BrainCircuit, Calendar, User, History, Loader2, Settings } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -51,19 +49,6 @@ export default function Analysis() {
 
     const analysis = await analyzeSalesPerformance(member.name, selectedMonth, productData);
     setResult(analysis);
-    
-    // Save to Firestore (optional, for history)
-    try {
-      await addDoc(collection(db, 'aiInsights'), {
-        memberId: selectedMemberId,
-        month: selectedMonth,
-        content: analysis,
-        createdAt: serverTimestamp()
-      });
-    } catch (e) {
-      console.error(e);
-    }
-    
     setIsAnalyzing(false);
   };
 

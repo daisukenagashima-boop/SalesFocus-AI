@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { useData } from '../lib/DataContext';
-import { db } from '../lib/firebase';
-import { collection, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore';
-import { UserPlus, User, Mail, Shield, Trash2, Edit2, X, Check, Users } from 'lucide-react';
+import { useData } from '../lib/DataProvider';
+import { UserPlus, User, Mail, Shield, Trash2, Edit2, X, Check, Users, Zap, Target, Activity, Cpu, Globe, Bot, Compass, Feather, Flame, Infinity } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Card, Badge } from '../components/Common';
+
+const AVATAR_ICONS = [Zap, Target, Activity, Cpu, Globe, Bot, Compass, Feather, Flame, Infinity];
 
 export default function Members() {
   const { members, loading } = useData();
@@ -12,29 +12,23 @@ export default function Members() {
   const [form, setForm] = useState({ name: '', role: '営業担当', email: '' });
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const getAvatarIcon = (id: string) => {
+    const index = id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % AVATAR_ICONS.length;
+    const Icon = AVATAR_ICONS[index];
+    return <Icon className="w-5 h-5" />;
+  };
+
+const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      if (editingId) {
-        await updateDoc(doc(db, 'members', editingId), form);
-        setEditingId(null);
-      } else {
-        await addDoc(collection(db, 'members'), form);
-        setIsAdding(false);
-      }
-      setForm({ name: '', role: '営業担当', email: '' });
-    } catch (error) {
-           console.error('Error with member:', error);
-    }
+    alert('Mock: 担当者情報が「保存」されました（Firebase連携解除中）');
+    setIsAdding(false);
+    setForm({ name: '', role: '営業担当', email: '' });
+    setEditingId(null);
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('担当者情報を削除しますか？')) return;
-    try {
-      await deleteDoc(doc(db, 'members', id));
-    } catch (error) {
-      console.error('Error deleting member:', error);
-    }
+    alert('Mock: 担当者情報を削除しました');
   };
 
   const startEdit = (m: any) => {
@@ -136,8 +130,8 @@ export default function Members() {
         {members.map(member => (
           <Card key={member.id} noPadding className="hover:border-brand-midnight transition-colors">
             <div className="p-5 flex flex-col items-center text-center">
-              <div className="w-12 h-12 rounded bg-slate-50 border border-slate-100 text-slate-400 flex items-center justify-center text-sm font-black uppercase mb-4 transition-colors group-hover:bg-brand-midnight group-hover:text-white">
-                {member.name.charAt(0)}
+              <div className="w-12 h-12 rounded bg-slate-50 border border-slate-100 text-slate-400 flex items-center justify-center mb-4 transition-colors group-hover:bg-brand-midnight group-hover:text-white">
+                {getAvatarIcon(member.id)}
               </div>
               <h3 className="text-xs font-black text-brand-text uppercase tracking-tight mb-1">{member.name}</h3>
               <Badge variant={member.role.includes('マネージャー') ? 'success' : 'info'} className="mb-4">

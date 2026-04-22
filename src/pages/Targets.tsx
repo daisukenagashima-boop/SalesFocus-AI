@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
-import { useData } from '../lib/DataContext';
-import { db } from '../lib/firebase';
-import { collection, setDoc, doc, deleteDoc, getDocs, query, where } from 'firebase/firestore';
+import { useData } from '../lib/DataProvider';
 import { Target } from '../types';
 import { format } from 'date-fns';
 import { Target as TargetIcon, Save, Search, User, Filter, AlertCircle, Sparkles } from 'lucide-react';
@@ -62,55 +60,7 @@ export default function Targets() {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      if (viewMode === 'matrix') {
-        const targetIdsSaved = new Set();
-        for (const memberId of ['system_overall', ...members.map(m => m.id)]) {
-          for (const product of products) {
-            const key = `${memberId}_${product.id}`;
-            const targetCount = localTargets[key] || 0;
-            const targetAmount = localTargetAmounts[key] || 0;
-            const targetId = `${selectedMonth}_${key}`;
-            targetIdsSaved.add(targetId);
-
-            if (targetCount > 0 || targetAmount > 0) {
-              await setDoc(doc(db, 'targets', targetId), {
-                memberId: memberId,
-                productId: product.id,
-                month: selectedMonth,
-                targetCount,
-                targetAmount
-              });
-            } else {
-              await deleteDoc(doc(db, 'targets', targetId));
-            }
-          }
-        }
-      } else {
-        // Yearly Save logic
-        const year = selectedMonth.split('-')[0];
-        for (let m = 1; m <= 12; m++) {
-          const monthStr = `${year}-${String(m).padStart(2, '0')}`;
-          for (const product of products) {
-            const key = `${monthStr}_${product.id}`;
-            const targetCount = localTargets[key] || 0;
-            const targetAmount = localTargetAmounts[key] || 0;
-            const targetId = `${monthStr}_${selectedMemberForYearly}_${product.id}`;
-
-            if (targetCount > 0 || targetAmount > 0) {
-              await setDoc(doc(db, 'targets', targetId), {
-                memberId: selectedMemberForYearly,
-                productId: product.id,
-                month: monthStr,
-                targetCount,
-                targetAmount
-              });
-            } else {
-              await deleteDoc(doc(db, 'targets', targetId));
-            }
-          }
-        }
-      }
-      alert('目標を全期間保存しました');
+      alert('目標を保存しました（モック動作）');
     } catch (error) {
       console.error('Error saving targets:', error);
     } finally {

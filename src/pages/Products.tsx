@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
-import { useData } from '../lib/DataContext';
-import { db } from '../lib/firebase';
-import { collection, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { useData } from '../lib/DataProvider';
 import { Package, Plus, Trash2, Edit2, X, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Card, Badge } from '../components/Common';
@@ -14,27 +12,15 @@ export default function Products() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      if (editingId) {
-        await updateDoc(doc(db, 'products', editingId), form);
-        setEditingId(null);
-      } else {
-        await addDoc(collection(db, 'products'), form);
-        setIsAdding(false);
-      }
-      setForm({ name: '', basePrice: 0, yearlyPrice: 0 });
-    } catch (error) {
-      console.error('Error with product:', error);
-    }
+    alert('Mock: プロダクト情報を保存しました（Firebase連携解除中）');
+    setIsAdding(false);
+    setForm({ name: '', basePrice: 0, yearlyPrice: 0 });
+    setEditingId(null);
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('このプロダクトを削除してもよろしいですか？')) return;
-    try {
-      await deleteDoc(doc(db, 'products', id));
-    } catch (error) {
-      console.error('Error deleting product:', error);
-    }
+    alert('Mock: プロダクトを削除しました');
   };
 
   const startEdit = (p: any) => {
