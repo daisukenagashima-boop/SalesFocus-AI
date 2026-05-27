@@ -143,7 +143,21 @@ export default function App() {
 
   useEffect(() => { applyTheme(themeId); }, [themeId]);
 
-  const reloadMeta = () => api.meta().then(setMeta).catch(console.error);
+  const [metaError, setMetaError] = useState(false);
+
+  const reloadMeta = async (retries = 4): Promise<void> => {
+    for (let i = 0; i <= retries; i++) {
+      try {
+        const m = await api.meta();
+        setMeta(m);
+        setMetaError(false);
+        return;
+      } catch (e) {
+        if (i === retries) { setMetaError(true); return; }
+        await new Promise((r) => setTimeout(r, 800)); // サーバー再起動中などをリトライ
+      }
+    }
+  };
   useEffect(() => { reloadMeta(); }, []);
   useEffect(() => {
     if (!month && meta) setMonthState(defaultMonth(meta));
@@ -151,6 +165,17 @@ export default function App() {
 
   const setMonth = (m: string) => { setMonthState(m); localStorage.setItem('sf-month', m); };
 
+  if (metaError && !meta) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 text-brand-muted text-sm">
+        <p>サーバーに接続できませんでした。</p>
+        <button onClick={() => { setMetaError(false); reloadMeta(); }}
+          className="px-4 py-2 rounded-lg bg-brand-midnight text-white text-[12px] font-black uppercase tracking-wider hover:opacity-90">
+          再読み込み
+        </button>
+      </div>
+    );
+  }
   if (!meta || !month) {
     return <div className="min-h-screen flex items-center justify-center text-brand-muted text-sm">読み込み中…</div>;
   }
