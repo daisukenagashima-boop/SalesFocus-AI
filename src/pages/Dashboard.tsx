@@ -57,7 +57,7 @@ export default function Dashboard() {
               <YAxis tick={{ fontSize: 11 }} />
               <Tooltip />
               <Bar dataKey="目標" fill="#cbd5e1" radius={[3, 3, 0, 0]} />
-              <Bar dataKey="実績" fill="#0F172A" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="実績" fill="var(--color-brand-midnight)" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </Card>

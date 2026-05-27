@@ -3,12 +3,23 @@
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-  
+
+  /* アクセント（ボタン・グラフ・強調）。テーマで上書きされる */
   --color-brand-midnight: #0F172A;
   --color-brand-bg: #F4F6F8;
   --color-brand-border: #E2E8F0;
   --color-brand-text: #1A1F23;
   --color-brand-muted: #64748B;
+
+  /* サイドバー配色（Slack風テーマで上書きされる） */
+  --color-sidebar: #ffffff;
+  --color-sidebar-fg: #64748B;
+  --color-sidebar-heading: #1A1F23;
+  --color-sidebar-active: #0F172A;
+  --color-sidebar-active-fg: #ffffff;
+  --color-sidebar-hover: #f1f5f9;
+  --color-sidebar-border: #E2E8F0;
+  --color-sidebar-logo: #0F172A;
 }
 
 @layer base {
