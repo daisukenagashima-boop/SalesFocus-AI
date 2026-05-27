@@ -41,7 +41,7 @@ const NAV = [
   { to: '/performance', icon: Trophy, label: '受注・活動実績' },
   { to: '/actuals', icon: PhoneCall, label: 'IS実績入力' },
   { to: '/notion', icon: RefreshCw, label: 'Notion同期' },
-  { to: '/members', icon: Users, label: 'メンバー' },
+  { to: '/members', icon: Users, label: 'マスタ管理' },
 ];
 
 function Shell({ children }: { children: React.ReactNode }) {

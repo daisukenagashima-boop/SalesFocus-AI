@@ -60,6 +60,34 @@ app.put('/api/members/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- products ----------
+app.get('/api/products', (_req, res) => res.json(products()));
+app.post('/api/products', (req, res) => {
+  const { name, excel_name, notion_name, base_price } = req.body;
+  if (!name) return res.status(400).json({ error: 'name は必須です' });
+  const code = (req.body.code as string) || `prod_${Date.now()}`;
+  const dup = db.prepare('SELECT id FROM products WHERE code = ?').get(code);
+  if (dup) return res.status(400).json({ error: 'code が重複しています' });
+  const max = db.prepare('SELECT COALESCE(MAX(sort_order),0) AS m FROM products').get() as { m: number };
+  const info = db
+    .prepare('INSERT INTO products (code, name, excel_name, notion_name, base_price, sort_order) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(code, name, excel_name || null, notion_name || name, base_price ?? 0, max.m + 1);
+  res.json({ id: info.lastInsertRowid });
+});
+app.put('/api/products/:id', (req, res) => {
+  const { name, excel_name, notion_name, base_price } = req.body;
+  db.prepare(
+    `UPDATE products SET name=COALESCE(?,name), excel_name=COALESCE(?,excel_name),
+     notion_name=COALESCE(?,notion_name), base_price=COALESCE(?,base_price) WHERE id=?`
+  ).run(name ?? null, excel_name ?? null, notion_name ?? null, base_price ?? null, req.params.id);
+  res.json({ ok: true });
+});
+app.delete('/api/products/:id', (req, res) => {
+  // 関連する目標・実績も連鎖削除される（FK ON DELETE CASCADE）
+  db.prepare('DELETE FROM products WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
 // ---------- excel import ----------
 app.post('/api/import/excel', async (req, res) => {
   const filePath = (req.body?.path as string) || process.env.TARGET_EXCEL_PATH;

@@ -120,7 +120,7 @@ CREATE TABLE IF NOT EXISTS sync_log (
 const PRODUCTS = [
   { code: 'gijiroku', name: 'ながらかいご議事録', excel_name: '議事録', notion_name: 'ながらかいご議事録', base_price: 4000, sort_order: 1 },
   { code: 'kiroku', name: 'ながらかいご記録', excel_name: '記録', notion_name: 'ながらかいご記録', base_price: 30000, sort_order: 2 },
-  { code: 'income', name: '決定版介護ソフト', excel_name: 'インカム', notion_name: '決定版介護ソフト', base_price: 0, sort_order: 3 },
+  { code: 'income', name: 'ながらかいごインカム', excel_name: 'インカム', notion_name: 'ながらかいごインカム', base_price: 0, sort_order: 3 },
 ];
 
 const MEMBERS = [
@@ -138,6 +138,9 @@ export function seed() {
      ON CONFLICT(code) DO NOTHING`
   );
   for (const p of PRODUCTS) pInsert.run(p);
+
+  // 既存DBの旧名称を修正（ユーザーが手で変更していない既定値のみ）
+  db.prepare("UPDATE products SET name='ながらかいごインカム', notion_name='ながらかいごインカム' WHERE code='income' AND name='決定版介護ソフト'").run();
 
   const count = db.prepare('SELECT COUNT(*) AS n FROM members').get() as { n: number };
   if (count.n === 0) {

@@ -14,6 +14,11 @@ export const api = {
   addMember: (body: any) => req('/api/members', { method: 'POST', body: JSON.stringify(body) }),
   updateMember: (id: number, body: any) => req(`/api/members/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
 
+  products: () => req<import('../types').Product[]>('/api/products'),
+  addProduct: (body: any) => req('/api/products', { method: 'POST', body: JSON.stringify(body) }),
+  updateProduct: (id: number, body: any) => req(`/api/products/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteProduct: (id: number) => req(`/api/products/${id}`, { method: 'DELETE' }),
+
   importExcel: (path?: string) =>
     req<{ months: string[]; targets: number; isTargets: number }>('/api/import/excel', {
       method: 'POST',
