@@ -284,10 +284,20 @@ app.post('/api/notion/sync', async (_req, res) => {
     const result = await syncNotion();
     res.json({ ok: true, ...result });
   } catch (e: any) {
+    const raw = e.message || '';
+    let friendly = raw;
+    if (/Could not find database|not shared|Make sure the relevant/i.test(raw)) {
+      friendly =
+        'Notionインテグレーションが案件・活動DBに接続されていません。' +
+        'Notionで対象DB（またはSales DBページ）を開き「•••→コネクト」から連携を追加してください。' +
+        '（管理者制限で「コネクト」が出ない場合は管理者に接続を依頼してください）';
+    } else if (/unauthorized|API token is invalid|restricted/i.test(raw)) {
+      friendly = 'Notionトークンが無効です。.env の NOTION_API_KEY を確認してください。';
+    }
     db.prepare('INSERT INTO sync_log (synced_at, source, status, detail) VALUES (?,?,?,?)').run(
-      new Date().toISOString(), 'notion', 'error', e.message
+      new Date().toISOString(), 'notion', 'error', raw
     );
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: friendly });
   }
 });
 app.get('/api/sync-log', (_req, res) => {
