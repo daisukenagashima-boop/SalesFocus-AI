@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import { db } from './db.js';
 import { importExcel } from './excel.js';
@@ -12,6 +13,11 @@ const app = express();
 app.use(express.json());
 
 const PORT = Number(process.env.API_PORT) || 8787;
+// 既定はループバックのみ（自PC内からのアクセスに限定）。LAN公開したい場合のみ API_HOST=0.0.0.0
+const HOST = process.env.API_HOST || '127.0.0.1';
+// Excel読み込みを許可するベースディレクトリ（任意ファイル読み取りを防ぐ）
+const EXCEL_BASE = path.resolve(process.env.EXCEL_BASE_DIR || os.homedir());
+const ALLOWED_EXCEL_EXT = new Set(['.xlsx', '.xlsm', '.csv']);
 
 // ---------- helpers ----------
 function distinctMonths(): string[] {
@@ -93,6 +99,14 @@ app.post('/api/import/excel', async (req, res) => {
   const filePath = (req.body?.path as string) || process.env.TARGET_EXCEL_PATH;
   if (!filePath) return res.status(400).json({ error: 'Excelのパスが指定されていません' });
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: `ファイルが見つかりません: ${filePath}` });
+  // 任意ファイル読み取り防止: 許可ベース配下＆Excel拡張子のみ（シンボリックリンクは実体解決して判定）
+  const resolved = fs.realpathSync(path.resolve(filePath));
+  if (!(resolved === EXCEL_BASE || resolved.startsWith(EXCEL_BASE + path.sep))) {
+    return res.status(403).json({ error: `許可範囲外のパスです（${EXCEL_BASE} 配下のみ許可）` });
+  }
+  if (!ALLOWED_EXCEL_EXT.has(path.extname(resolved).toLowerCase())) {
+    return res.status(403).json({ error: 'Excel/CSVファイル(.xlsx/.xlsm/.csv)のみ読み込めます' });
+  }
   try {
     const result = await importExcel(filePath);
     res.json({ ok: true, ...result });
@@ -311,6 +325,6 @@ if (fs.existsSync(dist)) {
   app.get('*', (_req, res) => res.sendFile(path.join(dist, 'index.html')));
 }
 
-app.listen(PORT, () => {
-  console.log(`SalesFocus API: http://localhost:${PORT}  (Notion: ${notionConfigured() ? '設定済み' : '未設定'})`);
+app.listen(PORT, HOST, () => {
+  console.log(`SalesFocus API: http://${HOST}:${PORT}  (Notion: ${notionConfigured() ? '設定済み' : '未設定'} / bind: ${HOST})`);
 });
