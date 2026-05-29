@@ -12,6 +12,7 @@ import Performance from './pages/Performance';
 import Actuals from './pages/Actuals';
 import NotionSync from './pages/NotionSync';
 import Members from './pages/Members';
+import MemberDetail from './pages/MemberDetail';
 
 interface AppState {
   meta: Meta | null;
@@ -191,6 +192,7 @@ export default function App() {
             <Route path="/actuals" element={<Actuals />} />
             <Route path="/notion" element={<NotionSync />} />
             <Route path="/members" element={<Members />} />
+            <Route path="/member/:id" element={<MemberDetail />} />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </Shell>

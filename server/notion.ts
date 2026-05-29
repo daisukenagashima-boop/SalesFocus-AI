@@ -183,6 +183,10 @@ export async function syncNotion(): Promise<SyncResult> {
     const insP = db.prepare('INSERT INTO pipeline (status, count, mrr, updated_at) VALUES (?, ?, ?, ?)');
     for (const pp of pipeAgg.values()) insP.run(pp.status, pp.count, pp.mrr, now);
 
+    // 履歴スナップショット（前回比 / トレンドに使用）
+    const insH = db.prepare('INSERT INTO pipeline_history (synced_at, status, count, mrr) VALUES (?, ?, ?, ?)');
+    for (const pp of pipeAgg.values()) insH.run(now, pp.status, pp.count, pp.mrr);
+
     db.prepare('INSERT INTO sync_log (synced_at, source, status, detail) VALUES (?, ?, ?, ?)').run(
       now,
       'notion',

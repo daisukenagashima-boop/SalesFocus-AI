@@ -3,13 +3,27 @@ import { db } from './db.js';
 
 type CellVal = ExcelJS.CellValue;
 
+// Excel epoch（1899-12-30 = 連番0）
+const EXCEL_EPOCH_MS = Date.UTC(1899, 11, 30);
+
 function num(v: CellVal): number | null {
   if (v == null) return null;
   if (typeof v === 'number') return v;
+  if (v instanceof Date) {
+    // セルが「時間/日付フォーマット」で保存されている場合、Dateで返ってくる。
+    // 1900年代初頭の値は Excel連番(=元の数値) として復元する。
+    if (v.getUTCFullYear() < 1950) {
+      return (v.getTime() - EXCEL_EPOCH_MS) / 86400000;
+    }
+    return null; // 本物の日付（YYYY/MM等）は数値扱いしない
+  }
   if (typeof v === 'object') {
     const r = (v as any).result;
     if (typeof r === 'number') return r;
-    return null; // formula error (#DIV/0! etc.) or non-numeric
+    if (r instanceof Date && r.getUTCFullYear() < 1950) {
+      return (r.getTime() - EXCEL_EPOCH_MS) / 86400000;
+    }
+    return null;
   }
   const n = Number(String(v).replace(/[, %円件]/g, ''));
   return Number.isFinite(n) ? n : null;
@@ -114,6 +128,13 @@ export async function importExcel(filePath: string): Promise<ImportResult> {
       budget = COALESCE(excluded.budget, is_targets.budget)
   `);
 
+  const upsertMemberTarget = db.prepare(`
+    INSERT INTO member_targets (member_id, month, available_hours)
+    VALUES (@member_id, @month, @available_hours)
+    ON CONFLICT(member_id, month) DO UPDATE SET
+      available_hours = COALESCE(excluded.available_hours, member_targets.available_hours)
+  `);
+
   // --- 個別管理: メンバー × プロダクト × 月の目標 ---
   const indiv = wb.getWorksheet('個別管理');
   if (indiv) {
@@ -125,9 +146,10 @@ export async function importExcel(filePath: string): Promise<ImportResult> {
     let mode: 'target' | 'actual' = 'target';
     // 目標値を一時バッファ: key=`${product}` → {contracts,...} per month
     const pending = new Map<string, { contracts?: Map<string, number>; close_rate?: Map<string, number>; trials?: Map<string, number>; first_meetings?: Map<string, number> }>();
+    let pendingHours = new Map<string, number>(); // メンバー単位の月営業可能時間バッファ
 
     const flush = () => {
-      if (currentMemberId == null) return;
+      if (currentMemberId == null) { pending.clear(); pendingHours.clear(); return; }
       for (const [pid, fields] of pending) {
         const productId = Number(pid);
         const months = new Set<string>();
@@ -147,7 +169,11 @@ export async function importExcel(filePath: string): Promise<ImportResult> {
           targetCount++;
         }
       }
+      for (const [month, h] of pendingHours) {
+        upsertMemberTarget.run({ member_id: currentMemberId, month, available_hours: h });
+      }
       pending.clear();
+      pendingHours = new Map();
     };
 
     const rowValues = (r: number) => {
@@ -184,7 +210,15 @@ export async function importExcel(filePath: string): Promise<ImportResult> {
         continue;
       }
 
-      if (mode !== 'target' || currentMemberId == null || currentProductId == null) continue;
+      if (mode !== 'target' || currentMemberId == null) continue;
+
+      // メンバー単位の項目（プロダクト非依存）
+      if (label === '月営業可能時間') {
+        pendingHours = rowValues(r);
+        continue;
+      }
+
+      if (currentProductId == null) continue;
 
       const key = String(currentProductId);
       if (!pending.has(key)) pending.set(key, {});

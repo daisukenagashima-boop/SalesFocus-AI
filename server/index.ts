@@ -223,6 +223,116 @@ app.put('/api/activity', (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- 進捗共有 / 稼働時間 ----------
+app.put('/api/progress-notes', (req, res) => {
+  const { member_id, month, content } = req.body;
+  if (!member_id || !month) return res.status(400).json({ error: 'member_id, month は必須です' });
+  if (typeof content === 'string' && content.length > 2000) return res.status(400).json({ error: '2000文字以内' });
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO progress_notes (member_id, month, content, created_at, updated_at)
+     VALUES (@member_id, @month, @content, @now, @now)
+     ON CONFLICT(member_id, month) DO UPDATE SET content=excluded.content, updated_at=excluded.updated_at`
+  ).run({ member_id, month, content: content ?? '', now });
+  res.json({ ok: true, updated_at: now });
+});
+
+app.put('/api/working-hours', (req, res) => {
+  const { member_id, month, hours, note } = req.body;
+  if (!member_id || !month) return res.status(400).json({ error: 'member_id, month は必須です' });
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO working_hours (member_id, month, hours, note, created_at, updated_at)
+     VALUES (@member_id, @month, @hours, @note, @now, @now)
+     ON CONFLICT(member_id, month) DO UPDATE SET hours=excluded.hours, note=excluded.note, updated_at=excluded.updated_at`
+  ).run({ member_id, month, hours: hours ?? 0, note: note ?? null, now });
+  res.json({ ok: true, updated_at: now });
+});
+
+// ---------- 個人ページ ----------
+app.get('/api/member/:id', (req, res) => {
+  const memberId = Number(req.params.id);
+  const month = req.query.month as string;
+  if (!month) return res.status(400).json({ error: 'month は必須です' });
+  const ps = products() as any[];
+
+  const member = db.prepare('SELECT * FROM members WHERE id = ?').get(memberId);
+  if (!member) return res.status(404).json({ error: 'メンバーが見つかりません' });
+
+  // 月内: メンバー×プロダクトの目標と実績
+  const byProduct = ps.map((p) => {
+    const t = db.prepare('SELECT * FROM targets WHERE member_id=? AND product_id=? AND month=?').get(memberId, p.id, month) as any;
+    const a = db.prepare('SELECT * FROM actuals WHERE member_id=? AND product_id=? AND month=?').get(memberId, p.id, month) as any;
+    return {
+      product_id: p.id, name: p.name, code: p.code, base_price: p.base_price,
+      target_contracts: t?.contracts || 0,
+      target_trials: t?.trials || 0,
+      target_first_meetings: t?.first_meetings || 0,
+      actual_contracts: a?.contracts || 0,
+      actual_mrr: a?.mrr || 0,
+    };
+  });
+
+  const memTarget = db.prepare('SELECT * FROM member_targets WHERE member_id=? AND month=?').get(memberId, month) as any;
+  const activity = db.prepare('SELECT * FROM activity_actuals WHERE member_id=? AND month=?').get(memberId, month) as any;
+  const wh = db.prepare('SELECT * FROM working_hours WHERE member_id=? AND month=?').get(memberId, month) as any;
+  const note = db.prepare('SELECT * FROM progress_notes WHERE member_id=? AND month=?').get(memberId, month) as any;
+
+  // 月次トレンド: 選択月を含む直近6ヶ月
+  const months = db.prepare(
+    `SELECT DISTINCT month FROM (
+       SELECT month FROM targets WHERE member_id=? UNION SELECT month FROM actuals WHERE member_id=?
+     ) WHERE month <= ? ORDER BY month DESC LIMIT 6`
+  ).all(memberId, memberId, month) as { month: string }[];
+  const sortedMonths = months.map((r) => r.month).sort();
+  const trend = sortedMonths.map((m) => {
+    const t = db.prepare('SELECT SUM(contracts) AS c FROM targets WHERE member_id=? AND month=?').get(memberId, m) as { c: number };
+    const a = db.prepare('SELECT SUM(contracts) AS c, SUM(mrr) AS mrr FROM actuals WHERE member_id=? AND month=?').get(memberId, m) as { c: number; mrr: number };
+    return { month: m, target_contracts: t.c || 0, actual_contracts: a.c || 0, actual_mrr: a.mrr || 0 };
+  });
+
+  res.json({
+    member,
+    month,
+    byProduct,
+    available_hours: memTarget?.available_hours ?? null,
+    working_hours: wh?.hours ?? null,
+    working_hours_note: wh?.note ?? '',
+    working_hours_updated_at: wh?.updated_at ?? null,
+    activity: {
+      calls: activity?.calls || 0,
+      connected: activity?.connected || 0,
+      faxes: activity?.faxes || 0,
+      first_meetings: activity?.first_meetings || 0,
+    },
+    progress_note: note?.content ?? '',
+    progress_note_updated_at: note?.updated_at ?? null,
+    trend,
+  });
+});
+
+// ---------- マネジメント一覧 ----------
+app.get('/api/management', (req, res) => {
+  const month = req.query.month as string;
+  if (!month) return res.status(400).json({ error: 'month は必須です' });
+  const rows = db
+    .prepare(
+      `SELECT m.id, m.name, m.role,
+              mt.available_hours,
+              wh.hours AS working_hours,
+              wh.updated_at AS hours_updated_at,
+              pn.content AS note,
+              pn.updated_at AS note_updated_at
+       FROM members m
+       LEFT JOIN member_targets mt ON mt.member_id=m.id AND mt.month=?
+       LEFT JOIN working_hours wh ON wh.member_id=m.id AND wh.month=?
+       LEFT JOIN progress_notes pn ON pn.member_id=m.id AND pn.month=?
+       WHERE m.active=1 ORDER BY m.sort_order, m.id`
+    )
+    .all(month, month, month);
+  res.json(rows);
+});
+
 // ---------- dashboard ----------
 app.get('/api/dashboard', (req, res) => {
   const month = req.query.month as string;
@@ -239,6 +349,11 @@ app.get('/api/dashboard', (req, res) => {
   const aMap = new Map(aRows.map((r) => [tKey(r), r]));
   const actMap = new Map(actRows.map((r) => [r.member_id, r]));
 
+  const memTargetRows = db.prepare('SELECT * FROM member_targets WHERE month=?').all(month) as any[];
+  const whRows = db.prepare('SELECT * FROM working_hours WHERE month=?').all(month) as any[];
+  const memTargetMap = new Map(memTargetRows.map((r) => [r.member_id, r]));
+  const whMap = new Map(whRows.map((r) => [r.member_id, r]));
+
   // per member
   const byMember = ms.map((m) => {
     let tContracts = 0, aContracts = 0, tMrr = 0, aMrr = 0;
@@ -249,12 +364,16 @@ app.get('/api/dashboard', (req, res) => {
       if (a) { aContracts += a.contracts || 0; aMrr += a.mrr || 0; }
     }
     const act = actMap.get(m.id) || {};
+    const mt = memTargetMap.get(m.id);
+    const wh = whMap.get(m.id);
     return {
       member_id: m.id, name: m.name, role: m.role,
       target_contracts: tContracts, actual_contracts: aContracts,
       target_mrr: tMrr, actual_mrr: aMrr,
       calls: act.calls || 0, connected: act.connected || 0,
       first_meetings: act.first_meetings || 0, faxes: act.faxes || 0,
+      available_hours: mt?.available_hours ?? null,
+      working_hours: wh?.hours ?? null,
     };
   });
 
@@ -287,8 +406,23 @@ app.get('/api/dashboard', (req, res) => {
     connected: sum(actRows, 'connected'),
   };
 
-  const pipeline = db.prepare('SELECT status, count, mrr FROM pipeline ORDER BY count DESC').all();
-  res.json({ month, totals, byMember, byProduct, pipeline });
+  // パイプライン + 前回スナップショットからの差分
+  const pipeline = db.prepare('SELECT status, count, mrr FROM pipeline').all() as { status: string; count: number; mrr: number }[];
+  const lastTwo = db
+    .prepare('SELECT DISTINCT synced_at FROM pipeline_history ORDER BY synced_at DESC LIMIT 2')
+    .all() as { synced_at: string }[];
+  let prevMap = new Map<string, number>();
+  if (lastTwo.length === 2) {
+    const prev = db.prepare('SELECT status, count FROM pipeline_history WHERE synced_at=?').all(lastTwo[1].synced_at) as { status: string; count: number }[];
+    prevMap = new Map(prev.map((r) => [r.status, r.count]));
+  }
+  const pipelineWithDiff = pipeline.map((p) => ({
+    ...p,
+    prev_count: prevMap.has(p.status) ? prevMap.get(p.status)! : null,
+    delta: prevMap.has(p.status) ? p.count - (prevMap.get(p.status) || 0) : null,
+  }));
+
+  res.json({ month, totals, byMember, byProduct, pipeline: pipelineWithDiff });
 });
 
 // ---------- notion ----------

@@ -51,6 +51,8 @@ export interface DashboardMemberRow {
   connected: number;
   first_meetings: number;
   faxes: number;
+  available_hours: number | null;
+  working_hours: number | null;
 }
 
 export interface DashboardProductRow {
@@ -78,7 +80,42 @@ export interface Dashboard {
   };
   byMember: DashboardMemberRow[];
   byProduct: DashboardProductRow[];
-  pipeline: { status: string; count: number; mrr: number }[];
+  pipeline: { status: string; count: number; mrr: number; prev_count: number | null; delta: number | null }[];
+}
+
+export interface MemberDetail {
+  member: Member;
+  month: string;
+  byProduct: {
+    product_id: number;
+    name: string;
+    code: string;
+    base_price: number;
+    target_contracts: number;
+    target_trials: number;
+    target_first_meetings: number;
+    actual_contracts: number;
+    actual_mrr: number;
+  }[];
+  available_hours: number | null;
+  working_hours: number | null;
+  working_hours_note: string;
+  working_hours_updated_at: string | null;
+  activity: { calls: number; connected: number; faxes: number; first_meetings: number };
+  progress_note: string;
+  progress_note_updated_at: string | null;
+  trend: { month: string; target_contracts: number; actual_contracts: number; actual_mrr: number }[];
+}
+
+export interface ManagementRow {
+  id: number;
+  name: string;
+  role: string;
+  available_hours: number | null;
+  working_hours: number | null;
+  hours_updated_at: string | null;
+  note: string | null;
+  note_updated_at: string | null;
 }
 
 export interface Actual {

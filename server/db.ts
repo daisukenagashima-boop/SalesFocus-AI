@@ -115,6 +115,48 @@ CREATE TABLE IF NOT EXISTS sync_log (
   status TEXT,
   detail TEXT
 );
+
+-- 進捗共有（テキスト）: メンバー × 月 で1セル
+CREATE TABLE IF NOT EXISTS progress_notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+  month TEXT NOT NULL,
+  content TEXT NOT NULL DEFAULT '',
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(member_id, month)
+);
+
+-- 稼働時間実績: メンバー × 月
+CREATE TABLE IF NOT EXISTS working_hours (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+  month TEXT NOT NULL,
+  hours REAL NOT NULL DEFAULT 0,
+  note TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(member_id, month)
+);
+
+-- パイプライン履歴（同期ごとのスナップショット。トレンド・前回比に使用）
+CREATE TABLE IF NOT EXISTS pipeline_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  synced_at TEXT NOT NULL,
+  status TEXT NOT NULL,
+  count INTEGER DEFAULT 0,
+  mrr REAL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_pipeline_history_synced ON pipeline_history(synced_at);
+
+-- メンバー目標（プロダクト非依存・月単位）: 月営業可能時間など
+CREATE TABLE IF NOT EXISTS member_targets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+  month TEXT NOT NULL,
+  available_hours REAL,
+  UNIQUE(member_id, month)
+);
 `);
 
 const PRODUCTS = [

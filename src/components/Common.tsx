@@ -60,6 +60,22 @@ export function Card({ children, title, subtitle, icon: Icon, className, headerA
   );
 }
 
+interface ProgressBarProps {
+  percent: number;
+  barClass?: string;
+  thickness?: 'thin' | 'normal' | 'thick';
+  className?: string;
+}
+export function ProgressBar({ percent, barClass = 'bg-brand-midnight', thickness = 'normal', className }: ProgressBarProps) {
+  const h = thickness === 'thin' ? 'h-1.5' : thickness === 'thick' ? 'h-3' : 'h-2';
+  const clamped = Math.max(0, Math.min(100, percent));
+  return (
+    <div className={cn('w-full bg-slate-100 rounded-full overflow-hidden', h, className)}>
+      <div className={cn('h-full rounded-full transition-all duration-300', barClass)} style={{ width: `${clamped}%` }} />
+    </div>
+  );
+}
+
 export function Badge({ children, variant = 'default', className }: { children: React.ReactNode, variant?: 'default' | 'success' | 'warning' | 'danger' | 'info', className?: string }) {
   const variants = {
     default: "bg-slate-100 text-slate-800 border-slate-200",

@@ -41,4 +41,11 @@ export const api = {
 
   syncNotion: () => req<any>('/api/notion/sync', { method: 'POST' }),
   syncLog: () => req<import('../types').SyncLog[]>('/api/sync-log'),
+
+  memberDetail: (id: number, month: string) =>
+    req<import('../types').MemberDetail>(`/api/member/${id}?month=${month}`),
+  saveProgressNote: (body: any) => req('/api/progress-notes', { method: 'PUT', body: JSON.stringify(body) }),
+  saveWorkingHours: (body: any) => req('/api/working-hours', { method: 'PUT', body: JSON.stringify(body) }),
+  management: (month: string) =>
+    req<import('../types').ManagementRow[]>(`/api/management?month=${month}`),
 };
