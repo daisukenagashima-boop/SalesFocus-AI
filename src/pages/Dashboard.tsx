@@ -1,352 +1,276 @@
-import React, { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useData } from '../lib/DataProvider';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  Tooltip, 
-  ResponsiveContainer, 
-} from 'recharts';
-import { TrendingUp, Target as TargetIcon, CheckCircle, Users, Activity, Package, LayoutGrid, CalendarRange, AlertCircle, CheckCircle2, Trophy } from 'lucide-react';
-import { format, parseISO, startOfYear, endOfYear, eachMonthOfInterval } from 'date-fns';
-import { motion } from 'motion/react';
-import { cn } from '../lib/utils';
-import { Card, Badge, KpiCard } from '../components/Common';
+import { Target as TargetIcon, DollarSign, PhoneCall, Handshake, FlaskConical, GitBranch, ChevronRight, Clock, MessageSquare } from 'lucide-react';
+import { Card, Badge, ProgressBar } from '../components/Common';
+import { api } from '../lib/api';
+import { yen, yenMan, intRound, pct, rateColor, rateBg, remaining, deltaText, round1, cn } from '../lib/utils';
+import { useApp } from '../App';
+import type { Dashboard as Dash, ManagementRow } from '../types';
+
+const PIPE_ORDER = [
+  'リード', 'アプローチ中', 'アポ取得', '長期育成中',
+  'トライアル準備中', 'トライアル中', '契約準備中', '契約',
+  '休眠', '撤退',
+];
 
 export default function Dashboard() {
-  const { members, products, targets, records, loading } = useData();
-  const [selectedYear] = useState('2026');
+  const { month } = useApp();
+  const [d, setD] = useState<Dash | null>(null);
+  const [mgmt, setMgmt] = useState<ManagementRow[]>([]);
+  const [err, setErr] = useState('');
 
-  const stats = useMemo(() => {
-    const today = new Date();
-    const currentMonth = format(today, 'yyyy-MM');
-    const startOfSelectedYear = startOfYear(new Date(`${selectedYear}-01-01`));
-    const endOfSelectedYear = endOfYear(new Date(`${selectedYear}-01-01`));
-    
-    // 1. Current Month Stats
-    const currentMonthTargets = targets.filter(t => t.month === currentMonth);
-    const monthlyRecords = records.filter(r => format(parseISO(r.date), 'yyyy-MM') === currentMonth);
+  useEffect(() => {
+    api.dashboard(month).then(setD).catch((e) => setErr(e.message));
+    api.management(month).then(setMgmt).catch(() => {});
+  }, [month]);
 
-    // Calculate goals based on 'system_overall' if exists, otherwise sum individuals
-    const getGoal = (targetList: typeof targets) => {
-      const overallTargets = targetList.filter(t => t.memberId === 'system_overall');
-      if (overallTargets.length > 0) {
-        return {
-          count: overallTargets.reduce((sum, t) => sum + t.targetCount, 0),
-          amount: overallTargets.reduce((sum, t) => sum + t.targetAmount, 0)
-        };
-      }
-      return {
-        count: targetList.reduce((sum, t) => sum + t.targetCount, 0),
-        amount: targetList.reduce((sum, t) => sum + t.targetAmount, 0)
-      };
-    };
+  if (err) return <div className="text-red-600 text-sm">{err}</div>;
+  if (!d) return <div className="text-brand-muted text-sm">読み込み中…</div>;
 
-    const currentGoals = getGoal(currentMonthTargets);
-    const totalTarget = currentGoals.count;
-    const totalTargetAmount = currentGoals.amount;
-    const totalActual = monthlyRecords.reduce((sum, r) => sum + r.count, 0);
-    const totalActualAmount = monthlyRecords.reduce((sum, r) => sum + r.amount, 0);
-    
-    const achievementRate = totalTarget > 0 ? (totalActual / totalTarget) * 100 : 0;
-    const revenueRate = totalTargetAmount > 0 ? (totalActualAmount / totalTargetAmount) * 100 : 0;
+  const t = d.totals;
+  const contractPct = pct(t.actual_contracts, t.target_contracts);
+  const mrrPct = pct(t.actual_mrr, t.target_mrr);
+  const meetingPct = pct(t.actual_first_meetings, t.target_first_meetings);
 
-    // 2. Yearly Aggregate Section (Product-wise)
-    const yearlyRecords = records.filter(r => format(parseISO(r.date), 'yyyy') === selectedYear);
-
-    const yearlyProductSummary = products.map(p => {
-      const pYearlyTargets = targets.filter(t => t.month.startsWith(selectedYear) && t.productId === p.id);
-      
-      // For each month, decide if we use overall or sum
-      let pYearlyTarget = 0;
-      const yearMonths = eachMonthOfInterval({ start: startOfSelectedYear, end: endOfSelectedYear });
-      yearMonths.forEach(m => {
-        const mStr = format(m, 'yyyy-MM');
-        const mPTargets = pYearlyTargets.filter(t => t.month === mStr);
-        const overall = mPTargets.find(t => t.memberId === 'system_overall');
-        if (overall) {
-          pYearlyTarget += overall.targetCount;
-        } else {
-          pYearlyTarget += mPTargets.reduce((sum, t) => sum + t.targetCount, 0);
-        }
-      });
-
-      const pYearlyActual = yearlyRecords.filter(r => r.productId === p.id).reduce((sum, r) => sum + r.count, 0);
-      const rate = pYearlyTarget > 0 ? (pYearlyActual / pYearlyTarget) * 100 : 0;
-      const remaining = Math.max(0, pYearlyTarget - pYearlyActual);
-      
-      const monthProgress = today.getMonth() + 1;
-      const targetProgress = (pYearlyTarget / 12) * monthProgress;
-      const status = pYearlyActual < targetProgress * 0.8 ? '要注意' : '良好';
-
-      return {
-        id: p.id,
-        name: p.name,
-        target: pYearlyTarget,
-        actual: pYearlyActual,
-        rate,
-        remaining,
-        status
-      };
-    });
-
-    const yearlyTotalTarget = yearlyProductSummary.reduce((sum, s) => sum + s.target, 0);
-    const yearlyTotalActual = yearlyProductSummary.reduce((sum, s) => sum + s.actual, 0);
-    const yearlyTotalRate = yearlyTotalTarget > 0 ? (yearlyTotalActual / yearlyTotalTarget) * 100 : 0;
-
-    // 3. Monthly Progress Matrix (1-12 months)
-    const months = eachMonthOfInterval({ start: startOfSelectedYear, end: endOfSelectedYear });
-    const monthlyMatrix = months.map(m => {
-      const mStr = format(m, 'yyyy-MM');
-      const monthTargets = targets.filter(t => t.month === mStr);
-      const monthRecords = records.filter(r => format(parseISO(r.date), 'yyyy-MM') === mStr);
-
-      const prodData: { [key: string]: { target: number, actual: number } } = {};
-      products.forEach(p => {
-        const mPTargets = monthTargets.filter(t => t.productId === p.id);
-        const overall = mPTargets.find(t => t.memberId === 'system_overall');
-        
-        prodData[p.id] = {
-          target: overall ? overall.targetCount : mPTargets.reduce((sum, t) => sum + t.targetCount, 0),
-          actual: monthRecords.filter(r => r.productId === p.id).reduce((sum, r) => sum + r.count, 0)
-        };
-      });
-
-      const mTotalTarget = Object.values(prodData).reduce((sum, d) => sum + d.target, 0);
-      const mTotalActual = Object.values(prodData).reduce((sum, d) => sum + d.actual, 0);
-
-      return {
-        month: format(m, 'M月'),
-        monthRaw: mStr,
-        prodData,
-        mTotalTarget,
-        mTotalActual,
-        rate: mTotalTarget > 0 ? (mTotalActual / mTotalTarget) * 100 : 0
-      };
-    });
-
-    // Ranking for current month (individuals only)
-    const currentMonthTargetsIndividuals = currentMonthTargets.filter(t => t.memberId !== 'system_overall');
-    const memberRankings = members.map(m => {
-      const mActual = monthlyRecords.filter(r => r.memberId === m.id).reduce((sum, r) => sum + r.count, 0);
-      const mTarget = currentMonthTargetsIndividuals.filter(t => t.memberId === m.id).reduce((sum, t) => sum + t.targetCount, 0);
-      const mActualAmt = monthlyRecords.filter(r => r.memberId === m.id).reduce((sum, r) => sum + r.amount, 0);
-      const mTargetAmt = currentMonthTargetsIndividuals.filter(t => t.memberId === m.id).reduce((sum, t) => sum + t.targetAmount, 0);
-      return {
-        id: m.id,
-        name: m.name,
-        actual: mActual,
-        target: mTarget,
-        actualAmt: mActualAmt,
-        targetAmt: mTargetAmt,
-        rate: mTarget > 0 ? (mActual / mTarget) * 100 : 0,
-        revenueRate: mTargetAmt > 0 ? (mActualAmt / mTargetAmt) * 100 : 0
-      };
-    }).sort((a, b) => b.actual - a.actual);
-
-    return { 
-      totalTarget, 
-      totalActual, 
-      totalTargetAmount, 
-      totalActualAmount, 
-      achievementRate, 
-      revenueRate,
-      yearlyProductSummary,
-      yearlyTotalTarget,
-      yearlyTotalActual,
-      yearlyTotalRate,
-      monthlyMatrix,
-      memberRankings 
-    };
-  }, [members, products, targets, records, selectedYear]);
-
-  if (loading && members.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-64 font-bold text-slate-400 gap-4">
-        <div className="w-8 h-8 rounded-full border-2 border-slate-200 border-t-brand-midnight animate-spin" />
-        <p className="text-[10px] uppercase tracking-[0.2em]">データの安全な同期を初期化中...</p>
-      </div>
-    );
-  }
+  // pipeline 並び替え + 集計
+  const pipeMap = new Map(d.pipeline.map((p) => [p.status, p]));
+  const pipeOrdered = [
+    ...PIPE_ORDER.map((s) => pipeMap.get(s)).filter(Boolean) as typeof d.pipeline,
+    ...d.pipeline.filter((p) => !PIPE_ORDER.includes(p.status)),
+  ];
+  const pipeMax = Math.max(...pipeOrdered.map((p) => p.count), 1);
+  const pipeTotalActive = pipeOrdered
+    .filter((p) => !['撤退', '休眠'].includes(p.status))
+    .reduce((s, p) => s + p.count, 0);
+  const trialNow = (pipeMap.get('トライアル中')?.count || 0) + (pipeMap.get('トライアル準備中')?.count || 0);
 
   return (
-    <div className="space-y-6 pb-20">
-      {/* Header Section */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-black text-brand-text tracking-tight uppercase flex items-center gap-2">
-            <LayoutGrid className="w-5 h-5 text-brand-midnight" />
-            {selectedYear}年 営業目標管理ダッシュボード
-          </h1>
-          <p className="text-[10px] text-brand-muted font-black uppercase tracking-[0.2em] mt-0.5">Comprehensive Performance Ecosystem</p>
-        </div>
-        <div className="flex items-center gap-3">
-           <Badge variant="info" className="bg-slate-100 border-slate-200 text-slate-600 font-black">
-             {selectedYear} ANNUAL CYCLE
-           </Badge>
-           <button className="p-2 border border-brand-border rounded hover:bg-slate-50 transition-colors">
-              <CalendarRange className="w-4 h-4 text-brand-muted" />
-           </button>
-        </div>
+    <div className="space-y-6">
+      {/* ====== メインKPI (大きく) ====== */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <MainKpi label="契約数" icon={TargetIcon}
+          actual={intRound(t.actual_contracts, { keepZero: true, suffix: '件' })}
+          target={`${intRound(t.target_contracts, { keepZero: true })}件 目標`}
+          actualRaw={t.actual_contracts} targetRaw={t.target_contracts}
+          percent={contractPct} fullDetail={`実績 ${t.actual_contracts.toFixed(1)} / 目標 ${t.target_contracts.toFixed(1)}`}
+        />
+        <MainKpi label="MRR" icon={DollarSign}
+          actual={yenMan(t.actual_mrr)}
+          target={`${yenMan(t.target_mrr)} 目標`}
+          actualRaw={t.actual_mrr} targetRaw={t.target_mrr}
+          percent={mrrPct} fullDetail={`実績 ${yen(t.actual_mrr)} / 目標 ${yen(t.target_mrr)}`}
+          remainingFmt={(n) => yenMan(n)}
+        />
       </div>
 
-      {/* Primary KPI Stream */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard label="成約目標 (数量)" value={`${stats.totalTarget} 件`} icon={Users} />
-        <KpiCard label="成約実績 (数量)" value={`${stats.totalActual} 件`} icon={TrendingUp} trend={{ val: `${stats.achievementRate.toFixed(1)}%`, positive: stats.achievementRate >= 80 }} />
-        <KpiCard label="月間目標 (金額)" value={`¥${stats.totalTargetAmount.toLocaleString()}`} icon={TargetIcon} />
-        <KpiCard label="現在実績 (金額)" value={`¥${stats.totalActualAmount.toLocaleString()}`} icon={CheckCircle} trend={{ val: `${stats.revenueRate.toFixed(1)}%`, positive: stats.revenueRate >= 80 }} />
+      {/* ====== サブKPI (横並び) ====== */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <SubKpi label="商談数" icon={Handshake}
+          main={`${intRound(t.actual_first_meetings, { keepZero: true })}件`}
+          sub={`目標 ${intRound(t.target_first_meetings, { keepZero: true })}件`}
+          rate={meetingPct} />
+        <SubKpi label="架電 / 通電" icon={PhoneCall}
+          main={`${intRound(t.calls, { keepZero: true })} / ${intRound(t.connected, { keepZero: true })}`}
+          sub="" />
+        <SubKpi label="案件パイプ計" icon={GitBranch}
+          main={`${pipeTotalActive}件`}
+          sub="撤退・休眠を除く" />
+        <SubKpi label="トライアル中" icon={FlaskConical}
+          main={`${trialNow}件`}
+          sub="準備中含む" />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-        {/* Yearly Achievement Summary (Excel style top table) */}
-        <Card 
-          className="md:col-span-12 lg:col-span-7"
-          title="【年間目標サマリー】" 
-          subtitle="各プロダクトごとの累積達成状況"
-          icon={Activity}
-          noPadding
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse min-w-[600px]">
-               <thead>
-                 <tr className="bg-slate-50 border-b border-brand-border text-[9px] font-black text-slate-400 uppercase tracking-widest text-left">
-                    <th className="px-5 py-3">商品名</th>
-                    <th className="px-4 py-3 text-right">目標件数</th>
-                    <th className="px-4 py-3 text-right">実績件数</th>
-                    <th className="px-4 py-3 text-right">達成率</th>
-                    <th className="px-4 py-3 text-right">残り</th>
-                    <th className="px-5 py-3 text-center">状態</th>
-                 </tr>
-               </thead>
-               <tbody className="divide-y divide-slate-100 font-bold">
-                 {stats.yearlyProductSummary.map(row => (
-                   <tr key={row.id} className="group hover:bg-slate-50 transition-colors">
-                      <td className="px-5 py-3.5 text-[11px] text-brand-text">{row.name}</td>
-                      <td className="px-4 py-3.5 text-right font-mono text-[11px] text-slate-500">{row.target}</td>
-                      <td className="px-4 py-3.5 text-right font-mono text-[11px] text-brand-text">{row.actual}</td>
-                      <td className="px-4 py-3.5 text-right font-mono text-[11px] text-blue-600 italic">{row.rate.toFixed(1)}%</td>
-                      <td className="px-4 py-3.5 text-right font-mono text-[11px] text-rose-500">{row.remaining}</td>
-                      <td className="px-5 py-3.5 text-center">
-                         <Badge variant={row.status === '要注意' ? 'warning' : 'success'} className="px-3 min-w-[70px]">
-                           {row.status === '要注意' ? (
-                             <span className="flex items-center gap-1.5 justify-center"><AlertCircle className="w-2.5 h-2.5" /> 要注意</span>
-                           ) : (
-                             <span className="flex items-center gap-1.5 justify-center"><CheckCircle2 className="w-2.5 h-2.5" /> 良好</span>
-                           )}
-                         </Badge>
-                      </td>
-                   </tr>
-                 ))}
-                 <tr className="bg-slate-100 font-black">
-                    <td className="px-5 py-3.5 text-[11px] text-brand-midnight">合計</td>
-                    <td className="px-4 py-3.5 text-right font-mono text-[11px]">{stats.yearlyTotalTarget}</td>
-                    <td className="px-4 py-3.5 text-right font-mono text-[11px]">{stats.yearlyTotalActual}</td>
-                    <td className="px-4 py-3.5 text-right font-mono text-[11px] text-blue-700 italic">{stats.yearlyTotalRate.toFixed(1)}%</td>
-                    <td className="px-4 py-3.5 text-right font-mono text-[11px] text-rose-600">{Math.max(0, stats.yearlyTotalTarget - stats.yearlyTotalActual)}</td>
-                    <td className="px-5 py-3.5"></td>
-                 </tr>
-               </tbody>
-            </table>
-          </div>
-        </Card>
-
-        {/* Member Ranking for current month */}
-        <Card 
-          className="md:col-span-12 lg:col-span-5"
-          title="今月の個人実績トップ"
-          subtitle="成約数量ベース"
-          icon={Trophy}
-          noPadding
-        >
-          <div className="divide-y divide-slate-50">
-            {stats.memberRankings.slice(0, 5).map((m, idx) => (
-              <div key={m.id} className="px-5 py-3.5 flex items-center justify-between group hover:bg-slate-50 transition-all">
-                <div className="flex items-center gap-4">
-                  <div className={cn(
-                    "w-6 h-6 rounded flex items-center justify-center text-[10px] font-black",
-                    idx === 0 ? "bg-amber-100 text-amber-700 border border-amber-200" : "bg-slate-100 text-slate-500 border border-slate-200"
-                  )}>
-                    {idx + 1}
-                  </div>
-                  <div>
-                    <h4 className="text-[11px] font-black text-brand-text uppercase">{m.name}</h4>
-                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tight">累計売上: ¥{m.actualAmt.toLocaleString()}</p>
-                  </div>
+      {/* ====== メンバー別 契約進捗 ====== */}
+      <Card title="メンバー別 契約進捗" subtitle="目標 vs 実績" noPadding>
+        <div className="divide-y divide-brand-border/50">
+          {d.byMember.filter((m) => m.target_contracts > 0 || m.actual_contracts > 0).map((m) => {
+            const p = pct(m.actual_contracts, m.target_contracts);
+            const rem = remaining(m.actual_contracts, m.target_contracts);
+            return (
+              <Link key={m.member_id} to={`/member/${m.member_id}`}
+                className="grid grid-cols-12 gap-3 items-center px-5 py-3 hover:bg-slate-50/70 transition-colors">
+                <div className="col-span-3 font-bold text-brand-text flex items-center gap-2 min-w-0">
+                  <span className="whitespace-nowrap">{m.name}</span><Badge variant="info">{m.role}</Badge>
                 </div>
-                <div className="text-right">
-                  <p className="text-[11px] font-mono font-black text-brand-midnight">{m.actual} 件</p>
-                  <div className="w-16 h-1 bg-slate-100 rounded-full mt-1.5 overflow-hidden">
-                    <div className="bg-brand-midnight h-full" style={{ width: `${Math.min(100, m.rate)}%` }} />
-                  </div>
+                <div className="col-span-3">
+                  <ProgressBar percent={p} barClass={rateBg(p)} thickness="normal" />
                 </div>
-              </div>
-            ))}
+                <div className={cn('col-span-1 text-right font-mono font-black text-sm', rateColor(p))}>{p}%</div>
+                <div className="col-span-2 text-right font-mono text-sm whitespace-nowrap">
+                  <span className="font-bold">{intRound(m.actual_contracts, { keepZero: true })}</span>
+                  <span className="text-brand-muted"> / {intRound(m.target_contracts, { keepZero: true })}件</span>
+                </div>
+                <div className="col-span-2 text-right text-[11px] text-brand-muted whitespace-nowrap">
+                  {rem > 0 ? `あと ${rem} 件` : '✓ 達成'}
+                </div>
+                <ChevronRight className="col-span-1 w-4 h-4 text-brand-muted justify-self-end" />
+              </Link>
+            );
+          })}
+          {d.byMember.every((m) => m.target_contracts === 0 && m.actual_contracts === 0) && (
+            <div className="px-5 py-6 text-center text-brand-muted text-sm">この月の目標・実績データがありません</div>
+          )}
+        </div>
+      </Card>
+
+      {/* ====== マネジメント一覧（稼働時間 + 進捗共有） ====== */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card title="メンバー稼働時間" subtitle="目標 vs 実績" icon={Clock} noPadding>
+          <div className="divide-y divide-brand-border/50">
+            {mgmt.filter((r) => r.available_hours != null || r.working_hours != null).map((r) => {
+              const p = r.available_hours ? pct(r.working_hours || 0, r.available_hours) : 0;
+              return (
+                <Link key={r.id} to={`/member/${r.id}`} className="grid grid-cols-12 gap-3 items-center px-5 py-2.5 hover:bg-slate-50/70">
+                  <div className="col-span-3 font-bold text-brand-text text-sm">{r.name}</div>
+                  <div className="col-span-5"><ProgressBar percent={p} barClass={rateBg(p)} thickness="thin" /></div>
+                  <div className={cn('col-span-1 text-right text-[11px] font-mono font-black', rateColor(p))}>{p}%</div>
+                  <div className="col-span-2 text-right font-mono text-[11px] whitespace-nowrap">
+                    {r.working_hours != null ? <span className="font-bold">{round1(r.working_hours)}h</span> : <span className="text-brand-muted">—</span>}
+                    <span className="text-brand-muted"> / {r.available_hours != null ? round1(r.available_hours) + 'h' : '—'}</span>
+                  </div>
+                  <ChevronRight className="col-span-1 w-3.5 h-3.5 text-brand-muted justify-self-end" />
+                </Link>
+              );
+            })}
+            {mgmt.every((r) => r.available_hours == null && r.working_hours == null) && (
+              <div className="px-5 py-6 text-center text-brand-muted text-sm">この月の稼働時間データがありません</div>
+            )}
           </div>
         </Card>
 
-        {/* Monthly Progress Matrix (Excel style bottom table) */}
-        <Card 
-          className="md:col-span-12"
-          title="【月別進捗詳細】"
-          subtitle="1月〜12月の推移マトリクス"
-          icon={TrendingUp}
-          noPadding
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse min-w-[1000px]">
-               <thead>
-                 <tr className="bg-slate-50 border-b border-brand-border text-[9px] font-black text-slate-400 uppercase tracking-widest text-left">
-                    <th className="px-5 py-3 sticky left-0 bg-slate-50 z-10 w-24 border-r border-slate-200">月</th>
-                    {products.map(p => (
-                      <th key={p.id} className="px-4 py-3 text-center border-r border-slate-200/50" colSpan={2}>{p.name} (件数)</th>
-                    ))}
-                    <th className="px-4 py-3 text-center bg-slate-100 font-black text-brand-midnight" colSpan={3}>合計・達成率 (件数)</th>
-                 </tr>
-                 <tr className="bg-slate-50 border-b border-brand-border text-[8px] font-black text-slate-500 uppercase tracking-tighter">
-                    <th className="px-5 py-2 sticky left-0 bg-slate-50 z-10 border-r border-slate-200 text-left">指標</th>
-                    {products.map(p => (
-                      <React.Fragment key={p.id}>
-                        <th className="px-2 py-2 text-right border-r border-slate-100">目標</th>
-                        <th className="px-2 py-2 text-right border-r border-slate-200/50 bg-white/50">実績</th>
-                      </React.Fragment>
-                    ))}
-                    <th className="px-2 py-2 text-right bg-slate-100/50 border-r border-slate-200">目標</th>
-                    <th className="px-2 py-2 text-right bg-slate-100/50 border-r border-slate-200 font-black text-brand-midnight underline decoration-blue-400/50">実績</th>
-                    <th className="px-2 py-2 text-center bg-slate-100 font-black text-blue-600">達成率</th>
-                 </tr>
-               </thead>
-               <tbody className="divide-y divide-slate-100">
-                  {stats.monthlyMatrix.map(mapMonth => (
-                    <tr key={mapMonth.month} className={cn(
-                      "hover:bg-slate-50 transition-colors",
-                      format(new Date(), 'yyyy-MM') === mapMonth.monthRaw ? "bg-blue-50/30" : ""
-                    )}>
-                       <td className="px-5 py-2.5 text-[10px] font-black text-brand-text sticky left-0 bg-white transition-colors group-hover:bg-slate-50 border-r border-slate-200">{mapMonth.month}</td>
-                       {products.map(p => (
-                         <React.Fragment key={p.id}>
-                           <td className="px-2 py-2.5 text-right font-mono text-[10px] text-slate-400 border-r border-slate-100">{mapMonth.prodData[p.id]?.target || 0}</td>
-                           <td className={cn(
-                             "px-2 py-2.5 text-right font-mono text-[10px] border-r border-slate-200/50",
-                             (mapMonth.prodData[p.id]?.actual || 0) > 0 ? "text-brand-midnight font-black" : "text-slate-200"
-                           )}>{mapMonth.prodData[p.id]?.actual || 0}</td>
-                         </React.Fragment>
-                       ))}
-                       <td className="px-2 py-2 text-right font-mono text-[10px] text-slate-500 bg-slate-100/20 border-r border-slate-200">{mapMonth.mTotalTarget}</td>
-                       <td className={cn(
-                         "px-2 py-2 text-right font-mono text-[10px] bg-slate-100/30 border-r border-slate-200 font-bold",
-                         mapMonth.mTotalActual > 0 ? "text-brand-midnight font-black" : "text-slate-200"
-                       )}>{mapMonth.mTotalActual}</td>
-                       <td className="px-2 py-2 text-center font-mono text-[10px] bg-slate-100/50 text-blue-600 font-bold">{mapMonth.rate.toFixed(1)}%</td>
-                    </tr>
-                  ))}
-               </tbody>
-            </table>
+        <Card title="メンバー進捗共有" subtitle="最終更新順" icon={MessageSquare} noPadding>
+          <div className="divide-y divide-brand-border/50">
+            {(() => {
+              const withNotes = mgmt.filter((r) => r.note && r.note.trim()).sort((a, b) =>
+                (b.note_updated_at || '').localeCompare(a.note_updated_at || '')
+              );
+              if (withNotes.length === 0) {
+                return <div className="px-5 py-6 text-center text-brand-muted text-sm">この月の進捗共有はまだありません</div>;
+              }
+              return withNotes.map((r) => (
+                <Link key={r.id} to={`/member/${r.id}`} className="block px-5 py-3 hover:bg-slate-50/70">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-sm text-brand-text">{r.name}</span>
+                    <span className="text-[10px] text-brand-muted">{r.note_updated_at ? new Date(r.note_updated_at).toLocaleString('ja-JP') : ''}</span>
+                  </div>
+                  <p className="text-[12px] text-brand-text leading-relaxed line-clamp-2">{r.note}</p>
+                </Link>
+              ));
+            })()}
           </div>
         </Card>
       </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* ====== 案件パイプライン ====== */}
+        <Card title="案件パイプライン" subtitle="営業ステージ順 / 前回同期比" icon={GitBranch}>
+          {pipeOrdered.length === 0 ? (
+            <p className="text-sm text-brand-muted py-8 text-center">Notion未同期です。</p>
+          ) : (
+            <div className="space-y-2">
+              {pipeOrdered.map((p) => {
+                const d2 = deltaText(p.delta);
+                return (
+                  <div key={p.status} className="flex items-center gap-3">
+                    <span className="text-[11px] font-bold text-brand-text w-28 truncate">{p.status}</span>
+                    <div className="flex-1 h-5 bg-slate-100 rounded overflow-hidden">
+                      <div className="h-full bg-brand-midnight" style={{ width: `${(p.count / pipeMax) * 100}%` }} />
+                    </div>
+                    <span className="text-[11px] font-mono font-bold w-10 text-right">{p.count}</span>
+                    <span className="text-[10px] font-mono text-brand-muted w-16 text-right" title={yen(p.mrr)}>{yenMan(p.mrr)}</span>
+                    <span className={cn('text-[10px] font-mono w-12 text-right', d2.color)}>{d2.text}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+
+        {/* ====== プロダクト別 ====== */}
+        <Card title="プロダクト別 契約進捗" noPadding>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-[10px] uppercase tracking-wider text-brand-muted border-b border-brand-border">
+                <th className="text-left px-5 py-2 font-black">プロダクト</th>
+                <th className="text-right px-3 py-2 font-black">実績/目標</th>
+                <th className="text-right px-3 py-2 font-black">達成率</th>
+                <th className="text-right px-5 py-2 font-black">MRR</th>
+              </tr>
+            </thead>
+            <tbody>
+              {d.byProduct.map((p) => {
+                const ppc = pct(p.actual_contracts, p.target_contracts);
+                return (
+                  <tr key={p.product_id} className="border-b border-brand-border/50 hover:bg-slate-50/40">
+                    <td className="px-5 py-2 font-bold text-brand-text">{p.name}</td>
+                    <td className="px-3 py-2 text-right font-mono">
+                      <span className="font-bold">{intRound(p.actual_contracts, { keepZero: true })}</span>
+                      <span className="text-brand-muted"> / {intRound(p.target_contracts, { keepZero: true })}</span>
+                    </td>
+                    <td className={cn('px-3 py-2 text-right font-mono font-bold', rateColor(ppc))}>{ppc}%</td>
+                    <td className="px-5 py-2 text-right font-mono" title={yen(p.actual_mrr)}>{yenMan(p.actual_mrr)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ===== 内部コンポーネント =====
+
+interface MainKpiProps {
+  label: string;
+  icon: any;
+  actual: string;
+  target: string;
+  actualRaw: number;
+  targetRaw: number;
+  percent: number;
+  fullDetail?: string;
+  remainingFmt?: (n: number) => string;
+}
+function MainKpi({ label, icon: Icon, actual, target, actualRaw, targetRaw, percent, fullDetail, remainingFmt }: MainKpiProps) {
+  const rem = Math.max(0, targetRaw - actualRaw);
+  const remText = remainingFmt ? remainingFmt(rem) : `${intRound(rem, { keepZero: true })}件`;
+  return (
+    <div className="bg-white p-5 rounded-xl border border-brand-border shadow-sm" title={fullDetail}>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 rounded-lg bg-brand-midnight">
+            <Icon className="w-4 h-4 text-white" />
+          </div>
+          <p className="text-[11px] font-black text-brand-muted uppercase tracking-widest">{label}</p>
+        </div>
+        <span className={cn('text-[13px] font-black font-mono', rateColor(percent))}>{percent}%</span>
+      </div>
+      <div className="flex items-baseline gap-2 mb-3">
+        <span className="text-3xl font-black text-brand-text font-mono">{actual}</span>
+        <span className="text-[11px] text-brand-muted font-bold">/ {target}</span>
+      </div>
+      <ProgressBar percent={percent} barClass={rateBg(percent)} thickness="thick" />
+      <p className="text-[11px] text-brand-muted font-bold mt-2">
+        {rem > 0 ? `あと ${remText}` : '✓ 目標達成'}
+      </p>
+    </div>
+  );
+}
+
+function SubKpi({ label, icon: Icon, main, sub, rate }: { label: string; icon: any; main: string; sub: string; rate?: number }) {
+  return (
+    <div className="bg-white p-4 rounded-xl border border-brand-border shadow-sm">
+      <div className="flex items-center gap-2 mb-1.5">
+        <Icon className="w-3.5 h-3.5 text-brand-muted" />
+        <p className="text-[10px] font-black text-brand-muted uppercase tracking-wider">{label}</p>
+      </div>
+      <p className="text-xl font-black text-brand-text font-mono">{main}</p>
+      <p className="text-[10px] text-brand-muted font-bold mt-1 flex items-center gap-2">
+        {sub}
+        {rate != null && <span className={cn('font-mono font-black', rateColor(rate))}>{rate}%</span>}
+      </p>
     </div>
   );
 }

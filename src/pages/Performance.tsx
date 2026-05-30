@@ -1,378 +1,148 @@
-import React, { useState } from 'react';
-import { useData } from '../lib/DataProvider';
-import { useAuth } from '../lib/AuthContext';
-import { format, parseISO } from 'date-fns';
-import { 
-  Trophy, 
-  ChevronLeft, 
-  ChevronRight, 
-  User, 
-  Package, 
-  Calendar,
-  Save,
-  Edit3,
-  CheckCircle2,
-  PhoneCall,
-  Zap,
-  Handshake,
-  FileCheck,
-  TrendingUp,
-  Inbox
-} from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import { cn } from '../lib/utils';
+import { useEffect, useState } from 'react';
+import { Save, Trophy, PhoneCall } from 'lucide-react';
 import { Card, Badge } from '../components/Common';
-import { MonthNavigator } from '../components/MonthNavigator';
-import { WeeklyPerformance, PerformanceMetric } from '../types';
+import { api } from '../lib/api';
+import { yen, round1 } from '../lib/utils';
+import { useApp } from '../App';
+import type { Actual, ActivityActual } from '../types';
 
-const WEEKS = [1, 2, 3, 4, 5];
-
-type MetricKey = keyof WeeklyPerformance;
-
-interface MetricRowDef {
-  label: string;
-  key: MetricKey;
-  icon: any;
-  color: string;
-  inbound?: boolean;
-}
-
-const OUTBOUND_METRICS: MetricRowDef[] = [
-  { label: '架電数', key: 'calls', icon: PhoneCall, color: 'text-blue-500' },
-  { label: '通電数', key: 'connected', icon: Zap, color: 'text-amber-500' },
-  { label: 'アポ数', key: 'appointments', icon: Calendar, color: 'text-emerald-500' },
-  { label: '商談数', key: 'negotiations', icon: Handshake, color: 'text-indigo-500' },
-  { label: 'トライアル開始', key: 'trialStarts', icon: TrendingUp, color: 'text-violet-500' },
-  { label: 'トライアル終了', key: 'trialEnds', icon: TrendingUp, color: 'text-rose-500' },
-  { label: '契約数', key: 'contracts', icon: FileCheck, color: 'text-brand-midnight' },
-];
-
-const INBOUND_METRICS: MetricRowDef[] = [
-  { label: 'インバウンド受付', key: 'inboundEntries', icon: Inbox, color: 'text-blue-500' },
-  { label: '初回アポ数', key: 'appointments', icon: Calendar, color: 'text-emerald-500' },
-  { label: '商談数', key: 'negotiations', icon: Handshake, color: 'text-indigo-500' },
-  { label: 'トライアル開始', key: 'trialStarts', icon: TrendingUp, color: 'text-violet-500' },
-  { label: 'トライアル終了', key: 'trialEnds', icon: TrendingUp, color: 'text-rose-500' },
-  { label: '契約数', key: 'contracts', icon: FileCheck, color: 'text-brand-midnight' },
-];
+interface CRow { contracts: number; mrr: number; source: string }
+interface ARow { calls: number; connected: number; first_meetings: number; faxes: number; source: string }
 
 export default function Performance() {
-  const { members, products, targets, records, performanceMetrics, loading } = useData();
-  const { user } = useAuth();
-  const [selectedMemberId, setSelectedMemberId] = useState('');
-  const [selectedProductId, setSelectedProductId] = useState('all');
-  const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
-  const [editMode, setEditMode] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+  const { month, meta } = useApp();
+  const [contracts, setContracts] = useState<Map<string, CRow>>(new Map());
+  const [activity, setActivity] = useState<Map<number, ARow>>(new Map());
+  const [msg, setMsg] = useState('');
 
-  // Auto-select member based on login
-  React.useEffect(() => {
-    if (members.length > 0 && !selectedMemberId) {
-      const currentMember = members.find(m => m.email.toLowerCase() === user?.email?.toLowerCase());
-      setSelectedMemberId(currentMember?.id || members[0].id);
-    }
-  }, [members, user, selectedMemberId]);
+  const load = async () => {
+    const { actuals, activity: act } = await api.actuals(month);
+    const cm = new Map<string, CRow>();
+    actuals.forEach((a: Actual) => cm.set(`${a.member_id}|${a.product_id}`, { contracts: a.contracts, mrr: a.mrr, source: a.source }));
+    setContracts(cm);
+    const am = new Map<number, ARow>();
+    act.forEach((a: ActivityActual) =>
+      am.set(a.member_id, { calls: a.calls, connected: a.connected, first_meetings: a.first_meetings, faxes: a.faxes, source: a.source }));
+    setActivity(am);
+  };
+  useEffect(() => { load(); }, [month]);
 
-  if (loading) return null;
+  const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 1500); };
 
-  const currentMetrics = selectedProductId === 'all' 
-    ? performanceMetrics.filter(m => m.memberId === selectedMemberId && m.month === selectedMonth)
-    : performanceMetrics.filter(m => m.memberId === selectedMemberId && m.productId === selectedProductId && m.month === selectedMonth);
-
-  const getMetricValue = (week: number, key: MetricKey) => {
-    if (selectedProductId === 'all') {
-      return currentMetrics.reduce((sum, m) => sum + (m.weeks[week]?.[key] || 0), 0);
-    }
-    return currentMetrics[0]?.weeks[week]?.[key] || 0;
+  const cval = (mid: number, pid: number) => contracts.get(`${mid}|${pid}`) || { contracts: 0, mrr: 0, source: 'manual' };
+  const setC = (mid: number, pid: number, field: 'contracts' | 'mrr', v: number) => {
+    setContracts((prev) => {
+      const n = new Map(prev);
+      const cur = n.get(`${mid}|${pid}`) || { contracts: 0, mrr: 0, source: 'manual' };
+      n.set(`${mid}|${pid}`, { ...cur, [field]: v });
+      return n;
+    });
+  };
+  const saveC = async (mid: number, pid: number) => {
+    const v = cval(mid, pid);
+    await api.saveActual({ member_id: mid, product_id: pid, month, contracts: v.contracts, mrr: v.mrr });
+    flash('保存しました'); load();
   };
 
-  const getRowTotal = (metrics: MetricRowDef[], key: MetricKey) => {
-    return WEEKS.reduce((sum, week) => sum + getMetricValue(week, key), 0);
+  const aval = (mid: number) => activity.get(mid) || { calls: 0, connected: 0, first_meetings: 0, faxes: 0, source: 'manual' };
+  const setA = (mid: number, field: keyof ARow, v: number) => {
+    setActivity((prev) => {
+      const n = new Map(prev);
+      const cur = n.get(mid) || { calls: 0, connected: 0, first_meetings: 0, faxes: 0, source: 'manual' };
+      n.set(mid, { ...cur, [field]: v } as ARow);
+      return n;
+    });
+  };
+  const saveA = async (mid: number) => {
+    const v = aval(mid);
+    await api.saveActivity({ member_id: mid, month, calls: v.calls, connected: v.connected, first_meetings: v.first_meetings, faxes: v.faxes });
+    flash('保存しました'); load();
   };
 
-  const handleValueChange = async (week: number, key: MetricKey, value: string) => {
-    if (selectedProductId === 'all') return;
-    alert('Mock: 成績データを更新しました（Firebase連携解除中）');
-  };
-
-  const renderTable = (metrics: MetricRowDef[], title: string) => (
-    <Card noPadding title={title} className="overflow-hidden">
-      {selectedProductId === 'all' && (
-        <div className="bg-amber-50/50 px-4 py-2 border-b border-amber-100/50 flex items-center gap-2">
-           <div className="bg-amber-100 p-1 rounded">
-             <TrendingUp className="w-3 h-3 text-amber-600" />
-           </div>
-           <span className="text-[9px] font-black text-amber-700 uppercase tracking-widest">全商品合算データ表示中 (閲覧のみ)</span>
-        </div>
-      )}
-      <div className="overflow-x-auto overflow-y-hidden">
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="bg-slate-50 border-b border-brand-border">
-              <th className="px-4 py-3 text-left w-40 min-w-40 border-r border-brand-border">
-                <span className="text-[10px] font-black text-brand-muted uppercase tracking-[0.2em]">指標</span>
-              </th>
-              {WEEKS.map(w => (
-                <th key={w} className="px-3 py-3 text-center border-r border-brand-border min-w-20">
-                  <span className="text-[10px] font-black text-brand-muted uppercase tracking-[0.2em]">{w}W</span>
-                </th>
-              ))}
-              <th className="px-4 py-3 text-center bg-slate-100 min-w-24">
-                <span className="text-[10px] font-black text-brand-midnight uppercase tracking-[0.2em]">合計</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {metrics.map(row => (
-              <tr key={row.key} className="group hover:bg-slate-50 transition-colors">
-                <td className="px-4 py-3 border-r border-brand-border">
-                  <div className="flex items-center gap-2">
-                    <row.icon className={`w-3.5 h-3.5 ${row.color}`} />
-                    <span className="text-[11px] font-black text-brand-text uppercase">{row.label}</span>
-                  </div>
-                </td>
-                {WEEKS.map(w => (
-                  <td key={w} className="p-0 border-r border-brand-border text-center align-middle">
-   {editMode && selectedProductId !== 'all' ? (
-                      <input
-                        type="number"
-                        className="w-full h-10 px-2 text-center text-xs font-mono font-bold bg-transparent outline-none focus:bg-white focus:ring-2 focus:ring-brand-midnight/10 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        value={getMetricValue(w, row.key) || ''}
-                        onChange={e => handleValueChange(w, row.key, e.target.value)}
-                        onFocus={e => e.target.select()}
-                      />
-                    ) : (
-                      <span className={cn(
-                        "text-xs font-mono font-black",
-                        selectedProductId === 'all' ? "text-amber-700" : "text-slate-600"
-                      )}>
-                        {getMetricValue(w, row.key)}
-                      </span>
-                    )}
-                  </td>
-                ))}
-                <td className="px-4 py-3 text-center bg-slate-50/50">
-                  <span className="text-xs font-mono font-black text-brand-midnight">
-                    {getRowTotal(metrics, row.key)}
-                  </span>
-                </td>
-              </tr>
-            ))}
-            {/* Rates */}
-            <tr className="bg-slate-50/30">
-               <td className="px-4 py-2 border-r border-brand-border">
-                 <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">成約率 (契約/商談)</span>
-               </td>
-               {WEEKS.map(w => {
-                 const neg = getMetricValue(w, 'negotiations');
-                 const con = getMetricValue(w, 'contracts');
-                 const rate = neg ? (con / neg * 100).toFixed(1) : '0.0';
-                 return (
-                   <td key={w} className="px-3 py-2 text-center border-r border-brand-border">
-                     <span className="text-[10px] font-mono font-bold text-slate-400">{rate}%</span>
-                   </td>
-                 );
-               })}
-               <td className="px-4 py-2 text-center bg-slate-100/50">
-                 {(() => {
-                   const neg = getRowTotal(metrics, 'negotiations');
-                   const con = getRowTotal(metrics, 'contracts');
-                   const rate = neg ? (con / neg * 100).toFixed(1) : '0.0';
-                   return <span className="text-[10px] font-mono font-black text-brand-midnight">{rate}%</span>;
-                 })()}
-               </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </Card>
-  );
+  const inp = 'w-20 text-right font-mono text-sm px-2 py-1 rounded border border-transparent hover:border-brand-border focus:border-brand-midnight focus:outline-none';
 
   return (
-    <div className="space-y-6 pb-20 animate-in fade-in duration-500">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-brand-text tracking-tight uppercase flex items-center gap-2">
-            <Trophy className="w-5 h-5 text-brand-midnight" />
-            個人成績管理・ファネル分析
-          </h1>
-          <p className="text-[11px] text-brand-muted font-bold uppercase tracking-wider">週次アクティビティ詳細トラッキング</p>
-        </div>
-        <div className="flex items-center gap-2 bg-white p-1 rounded-lg border border-brand-border shadow-sm">
-           <button 
-             onClick={() => setEditMode(!editMode)}
-             disabled={selectedProductId === 'all'}
-             className={`flex items-center gap-2 px-4 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all ${
-               selectedProductId === 'all' ? 'opacity-30 cursor-not-allowed grayscale' :
-               editMode 
-                 ? 'bg-brand-midnight text-white shadow-lg shadow-brand-midnight/20' 
-                 : 'bg-transparent text-brand-muted hover:bg-slate-50'
-             }`}
-           >
-              {editMode ? <CheckCircle2 className="w-3.5 h-3.5 text-blue-400" /> : <Edit3 className="w-3.5 h-3.5" />}
-              {editMode ? '編集を完了' : 'データを編集'}
-           </button>
-           {isSaving && (
-             <div className="flex items-center gap-2 px-3 animate-pulse">
-               <Save className="w-3 h-3 text-emerald-500" />
-               <span className="text-[9px] font-black text-emerald-600 uppercase">Saving...</span>
-             </div>
-           )}
-        </div>
-      </div>
+    <div className="space-y-5">
+      <p className="text-[11px] text-brand-muted">
+        Notionが無くても、ここで受注・活動の実績を直接入力できます。Notion同期を使う場合は同期値が入りますが、ここで手入力した値は同期で上書きされません（手入力優先）。
+      </p>
+      {msg && <span className="text-[11px] font-bold text-brand-midnight">{msg}</span>}
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-        <Card className="lg:col-span-1" noPadding>
-          <div className="p-4 space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                <User className="w-3 h-3" /> 担当者
-              </label>
-              <select 
-                value={selectedMemberId}
-                onChange={e => setSelectedMemberId(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-brand-border rounded text-xs font-black focus:bg-white transition-all outline-none"
-              >
-                {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                <Package className="w-3 h-3" /> プロダクト
-              </label>
-              <select 
-                value={selectedProductId}
-                onChange={e => setSelectedProductId(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-brand-border rounded text-xs font-black focus:bg-white transition-all outline-none"
-              >
-                <option value="all">【全プロダクト合計】</option>
-                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                <Calendar className="w-3 h-3" /> 対象月
-              </label>
-              <MonthNavigator 
-                value={selectedMonth}
-                onChange={setSelectedMonth}
-                className="w-full"
-              />
-            </div>
-          </div>
-        </Card>
+      <Card title="受注実績" subtitle="メンバー × プロダクト（契約数・MRR）" icon={Trophy} noPadding>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-[10px] uppercase tracking-wider text-brand-muted border-b border-brand-border bg-slate-50/40">
+              <th className="text-left px-5 py-2.5 font-black">メンバー</th>
+              <th className="text-left px-3 py-2.5 font-black">プロダクト</th>
+              <th className="text-right px-3 py-2.5 font-black">契約数</th>
+              <th className="text-right px-3 py-2.5 font-black">MRR(円)</th>
+              <th className="text-center px-3 py-2.5 font-black">区分</th>
+              <th className="px-3 py-2.5"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {meta!.members.map((m) =>
+              meta!.products.map((p, pi) => {
+                const v = cval(m.id, p.id);
+                return (
+                  <tr key={`${m.id}-${p.id}`} className="border-b border-brand-border/50 hover:bg-slate-50/40">
+                    {pi === 0 && (
+                      <td rowSpan={meta!.products.length} className="px-5 py-2 font-bold text-brand-text align-top border-r border-brand-border/50">
+                        {m.name}
+                      </td>
+                    )}
+                    <td className="px-3 py-1.5 text-brand-muted">{p.name}</td>
+                    <td className="px-3 py-1.5 text-right">
+                      <input type="number" value={v.contracts} onChange={(e) => setC(m.id, p.id, 'contracts', Number(e.target.value))} className={inp} />
+                    </td>
+                    <td className="px-3 py-1.5 text-right">
+                      <input type="number" value={v.mrr} onChange={(e) => setC(m.id, p.id, 'mrr', Number(e.target.value))} className="w-28 text-right font-mono text-sm px-2 py-1 rounded border border-transparent hover:border-brand-border focus:border-brand-midnight focus:outline-none" />
+                    </td>
+                    <td className="px-3 py-1.5 text-center">
+                      <Badge variant={v.source === 'notion' ? 'info' : 'default'}>{v.source === 'notion' ? 'Notion' : '手入力'}</Badge>
+                    </td>
+                    <td className="px-3 py-1.5 text-right">
+                      <button onClick={() => saveC(m.id, p.id)} className="text-brand-muted hover:text-brand-midnight"><Save className="w-3.5 h-3.5" /></button>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </Card>
 
-        <div className="lg:col-span-3 space-y-6">
-          {selectedProductId === 'all' && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-               {(() => {
-                 const currentMonthTargets = targets.filter(t => t.memberId === selectedMemberId && t.month === selectedMonth);
-                 const currentMonthRecords = records.filter(r => r.memberId === selectedMemberId && format(parseISO(r.date), 'yyyy-MM') === selectedMonth);
-                 
-                 const totalTarget = currentMonthTargets.reduce((sum, t) => sum + t.targetCount, 0);
-                 const totalActual = currentMonthRecords.reduce((sum, r) => sum + r.count, 0);
-                 const totalTargetAmt = currentMonthTargets.reduce((sum, t) => sum + t.targetAmount, 0);
-                 const totalActualAmt = currentMonthRecords.reduce((sum, r) => sum + r.amount, 0);
-                 
-                 const achievement = totalTarget > 0 ? (totalActual / totalTarget * 100).toFixed(1) : '0';
-                 const revenueAch = totalTargetAmt > 0 ? (totalActualAmt / totalTargetAmt * 100).toFixed(1) : '0';
-
-                 return (
-                   <>
-                     <Card className="bg-slate-900 border-none">
-                       <div className="flex flex-col">
-                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">月間成約件数 合計</span>
-                         <div className="flex items-baseline gap-2">
-                           <span className="text-2xl font-black text-white font-mono">{totalActual}</span>
-                           <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">/ {totalTarget}件</span>
-                         </div>
-                         <div className="mt-3 w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-                           <div className="h-full bg-blue-500" style={{ width: `${Math.min(100, Number(achievement))}%` }} />
-                         </div>
-                         <span className="mt-2 text-[10px] font-black text-blue-400 uppercase tracking-widest">{achievement}% 達成</span>
-                       </div>
-                     </Card>
-                     <Card className="bg-slate-900 border-none">
-                       <div className="flex flex-col">
-                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">月間売上合計</span>
-                         <div className="flex items-baseline gap-2">
-                           <span className="text-xl font-black text-white font-mono">¥{totalActualAmt.toLocaleString()}</span>
-                           <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">/ ¥{totalTargetAmt.toLocaleString()}</span>
-                         </div>
-                         <div className="mt-3 w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-                           <div className="h-full bg-emerald-500" style={{ width: `${Math.min(100, Number(revenueAch))}%` }} />
-                         </div>
-                         <span className="mt-2 text-[10px] font-black text-emerald-400 uppercase tracking-widest">{revenueAch}% 達成</span>
-                       </div>
-                     </Card>
-                     <Card className="bg-slate-900 border-none">
-                       <div className="flex flex-col">
-                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">総合パフォーマンス</span>
-                         <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 rounded-full border-4 border-blue-500/20 border-t-blue-500 flex items-center justify-center">
-                              <Trophy className="w-5 h-5 text-blue-400" />
-                            </div>
-                            <div>
-                               <p className="text-[11px] font-black text-white uppercase tracking-tight">個人総合ランク</p>
-                               <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">分析中...</p>
-                            </div>
-                         </div>
-                         <div className="mt-4 flex gap-1">
-                            {Array.from({ length: 5 }).map((_, i) => (
-                              <div key={i} className={`h-1 flex-1 rounded-full ${i < 4 ? 'bg-blue-500' : 'bg-white/5'}`} />
-                            ))}
-                         </div>
-                       </div>
-                     </Card>
-                   </>
-                 );
-               })()}
-            </div>
-          )}
-
-          {selectedProductId === 'all' && (
-            <Card title="商品別実積内訳" subtitle="プロダクト別の達成率・進捗データ" noPadding>
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-brand-border">
-                      <th className="px-4 py-3 text-left text-[9px] font-black text-brand-muted uppercase tracking-widest">商品名</th>
-                      <th className="px-4 py-3 text-right text-[9px] font-black text-brand-muted uppercase tracking-widest">成約目標</th>
-                      <th className="px-4 py-3 text-right text-[9px] font-black text-brand-muted uppercase tracking-widest">成約実績</th>
-                      <th className="px-4 py-3 text-right text-[9px] font-black text-brand-muted uppercase tracking-widest">達成率</th>
-                      <th className="px-4 py-3 text-right text-[9px] font-black text-brand-muted uppercase tracking-widest">売上実績</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 italic">
-                    {products.map(p => {
-                      const target = targets.find(t => t.memberId === selectedMemberId && t.month === selectedMonth && t.productId === p.id);
-                      const actuals = records.filter(r => r.memberId === selectedMemberId && r.productId === p.id && format(parseISO(r.date), 'yyyy-MM') === selectedMonth);
-                      
-                      const targetCount = target?.targetCount || 0;
-                      const actualCount = actuals.reduce((sum, r) => sum + r.count, 0);
-                      const actualAmt = actuals.reduce((sum, r) => sum + r.amount, 0);
-                      const rate = targetCount > 0 ? (actualCount / targetCount * 100).toFixed(1) : '0.0';
-
-                      return (
-                        <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="px-4 py-3 text-[11px] font-black text-brand-text">{p.name}</td>
-                          <td className="px-4 py-3 text-right font-mono text-[11px] text-slate-400">{targetCount}</td>
-                          <td className="px-4 py-3 text-right font-mono text-[11px] text-brand-midnight font-black">{actualCount}</td>
-                          <td className="px-4 py-3 text-right font-mono text-[11px] text-blue-600 font-black">{rate}%</td>
-                          <td className="px-4 py-3 text-right font-mono text-[11px] text-emerald-600 font-black">¥{actualAmt.toLocaleString()}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          )}
-
-          {renderTable(OUTBOUND_METRICS, '【アウトバウンド】活動サマリー')}
-          {renderTable(INBOUND_METRICS, '【インバウンド】活動サマリー')}
-        </div>
-      </div>
+      <Card title="活動実績" subtitle="メンバー別（架電・通電・商談・FAX）" icon={PhoneCall} noPadding>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-[10px] uppercase tracking-wider text-brand-muted border-b border-brand-border bg-slate-50/40">
+              <th className="text-left px-5 py-2.5 font-black">メンバー</th>
+              <th className="text-right px-3 py-2.5 font-black">架電</th>
+              <th className="text-right px-3 py-2.5 font-black">通電</th>
+              <th className="text-right px-3 py-2.5 font-black">商談</th>
+              <th className="text-right px-3 py-2.5 font-black">FAX</th>
+              <th className="text-center px-3 py-2.5 font-black">区分</th>
+              <th className="px-3 py-2.5"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {meta!.members.map((m) => {
+              const v = aval(m.id);
+              return (
+                <tr key={m.id} className="border-b border-brand-border/50 hover:bg-slate-50/40">
+                  <td className="px-5 py-1.5 font-bold text-brand-text">{m.name}</td>
+                  <td className="px-3 py-1.5 text-right"><input type="number" value={round1(v.calls)} onChange={(e) => setA(m.id, 'calls', Number(e.target.value))} className={inp} /></td>
+                  <td className="px-3 py-1.5 text-right"><input type="number" value={round1(v.connected)} onChange={(e) => setA(m.id, 'connected', Number(e.target.value))} className={inp} /></td>
+                  <td className="px-3 py-1.5 text-right"><input type="number" value={round1(v.first_meetings)} onChange={(e) => setA(m.id, 'first_meetings', Number(e.target.value))} className={inp} /></td>
+                  <td className="px-3 py-1.5 text-right"><input type="number" value={round1(v.faxes)} onChange={(e) => setA(m.id, 'faxes', Number(e.target.value))} className={inp} /></td>
+                  <td className="px-3 py-1.5 text-center"><Badge variant={v.source === 'notion' ? 'info' : 'default'}>{v.source === 'notion' ? 'Notion' : '手入力'}</Badge></td>
+                  <td className="px-3 py-1.5 text-right"><button onClick={() => saveA(m.id)} className="text-brand-muted hover:text-brand-midnight"><Save className="w-3.5 h-3.5" /></button></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
     </div>
   );
 }

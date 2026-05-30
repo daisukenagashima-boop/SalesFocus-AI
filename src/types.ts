@@ -1,77 +1,171 @@
-
 export interface Member {
-  id: string;
+  id: number;
   name: string;
+  short_name: string | null;
   role: string;
-  email: string;
+  email: string | null;
+  notion_person_id: string | null;
+  active: number;
 }
 
 export interface Product {
-  id: string;
+  id: number;
+  code: string;
   name: string;
-  basePrice: number; // 月払い（標準）
-  yearlyPrice?: number; // 年払い
+  excel_name: string | null;
+  notion_name: string | null;
+  base_price: number;
+}
+
+export interface Meta {
+  members: Member[];
+  products: Product[];
+  months: string[];
+  notionConfigured: boolean;
+  defaultExcelPath: string;
 }
 
 export interface Target {
-  id: string;
-  memberId: string;
-  productId: string;
-  month: string; // YYYY-MM
-  targetCount: number;
-  targetAmount: number;
-}
-
-export interface SalesRecord {
-  id: string;
-  memberId: string;
-  productId: string;
-  date: string; // ISO String
-  customerName?: string;
-  paymentPlan: 'monthly' | 'yearly';
-  count: number;
-  unitPrice: number;
-  amount: number;
-  note?: string;
-}
-
-export interface AIInsight {
-  id: string;
-  memberId: string;
+  id: number;
+  member_id: number;
+  product_id: number;
   month: string;
-  content: string;
-  updatedAt: string;
+  contracts: number;
+  close_rate: number | null;
+  trials: number;
+  first_meetings: number;
+  member_name: string;
+  product_name: string;
+  product_code: string;
 }
 
-export interface WeeklyPerformance {
-  calls?: number;           // 架電数
-  connected?: number;       // 通電数
-  appointments?: number;    // アポ数
-  negotiations?: number;    // 商談数
-  trialStarts?: number;     // トライアル開始
-  trialEnds?: number;       // トライアル終了
-  contracts?: number;       // 契約数
-  inboundEntries?: number;  // インバウンド数
+export interface DashboardMemberRow {
+  member_id: number;
+  name: string;
+  role: string;
+  target_contracts: number;
+  actual_contracts: number;
+  target_mrr: number;
+  actual_mrr: number;
+  calls: number;
+  connected: number;
+  first_meetings: number;
+  faxes: number;
+  available_hours: number | null;
+  working_hours: number | null;
 }
 
-export interface PerformanceMetric {
-  id: string;
-  memberId: string;
-  productId: string;
-  month: string;           // YYYY-MM
-  weeks: {
-    [weekNumber: number]: WeeklyPerformance; // 1-5
-  };
+export interface DashboardProductRow {
+  product_id: number;
+  name: string;
+  code: string;
+  target_contracts: number;
+  actual_contracts: number;
+  target_mrr: number;
+  actual_mrr: number;
 }
 
-export interface MonthlyStats {
+export interface Dashboard {
   month: string;
-  target: number;
-  actual: number;
-  members: {
-    [memberId: string]: {
-      target: number;
-      actual: number;
-    }
+  totals: {
+    target_contracts: number;
+    actual_contracts: number;
+    target_mrr: number;
+    actual_mrr: number;
+    target_first_meetings: number;
+    actual_first_meetings: number;
+    target_trials: number;
+    calls: number;
+    connected: number;
   };
+  byMember: DashboardMemberRow[];
+  byProduct: DashboardProductRow[];
+  pipeline: { status: string; count: number; mrr: number; prev_count: number | null; delta: number | null }[];
+}
+
+export interface MemberDetail {
+  member: Member;
+  month: string;
+  byProduct: {
+    product_id: number;
+    name: string;
+    code: string;
+    base_price: number;
+    target_contracts: number;
+    target_trials: number;
+    target_first_meetings: number;
+    actual_contracts: number;
+    actual_mrr: number;
+  }[];
+  available_hours: number | null;
+  working_hours: number | null;
+  working_hours_note: string;
+  working_hours_updated_at: string | null;
+  activity: { calls: number; connected: number; faxes: number; first_meetings: number };
+  progress_note: string;
+  progress_note_updated_at: string | null;
+  trend: { month: string; target_contracts: number; actual_contracts: number; actual_mrr: number }[];
+}
+
+export interface ManagementRow {
+  id: number;
+  name: string;
+  role: string;
+  available_hours: number | null;
+  working_hours: number | null;
+  hours_updated_at: string | null;
+  note: string | null;
+  note_updated_at: string | null;
+}
+
+export interface Actual {
+  id: number;
+  member_id: number;
+  product_id: number;
+  month: string;
+  contracts: number;
+  mrr: number;
+  source: string;
+  member_name: string;
+  product_name: string;
+  product_code: string;
+}
+
+export interface ActivityActual {
+  id: number;
+  member_id: number;
+  month: string;
+  calls: number;
+  connected: number;
+  faxes: number;
+  first_meetings: number;
+  source: string;
+  member_name: string;
+}
+
+export interface IsTarget {
+  id: number;
+  month: string;
+  channel: string;
+  appointments: number;
+  calls: number;
+  budget: number;
+}
+
+export interface IsActual {
+  id: number;
+  month: string;
+  channel: string;
+  appointments: number;
+  calls: number;
+  budget: number;
+  note: string | null;
+}
+
+export interface SyncLog {
+  id: number;
+  synced_at: string;
+  source: string;
+  status: string;
+  detail: string;
 }

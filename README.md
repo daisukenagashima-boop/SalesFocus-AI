@@ -1,51 +1,259 @@
-# SalesFocus AI 🚀
+# SalesFocus AI — 営業数値管理（ローカル運用版）
 
-営業成績の可視化、リアルタイム進捗管理、およびAIによる個別改善提案を行う営業支援ダッシュボードです。
+部署の営業数値（目標・実績）を一元管理するローカルWebアプリです。
+**目標はExcelから取り込み、受注・活動の実績はNotionの案件CRMから自動集計**。Notionが無くても手入力だけで完結します。
 
-## 🌟 主な機能
-
-- **ダッシュボード**: リアルタイムな成約率、売上推移、進捗状況の可視化
-- **実績入力**: ログインユーザーと紐付いたスマートな成約データ入力
-- **成績管理**: 週次・月次の詳細なパフォーマンス管理と目標設定
-- **AI分析 (Gemini API)**: 過去の実績データに基づいた、AIによるパーソナライズされた営業改善提案
-- **マスタ管理**: プロダクト、担当者（認証メール対応）の柔軟な管理
-
-## 🛠️ 技術スタック
-
-- **Frontend**: React, TypeScript, Tailwind CSS, Lucide React, Framer Motion
-- **Backend/Database**: Firebase (Authentication, Firestore)
-- **AI**: Google Gemini API (@google/genai)
-- **Tooling**: Vite, date-fns, Recharts
-
-## 🚀 始め方
-
-1. **GitHubからのエクスポート**: Google AI StudioからGitHubへエクスポートします。
-2. **依存関係のインストール**:
-   ```bash
-   npm install
-   ```
-3. **Firebaseの設定**: 
-   - `firebase-applet-config.json` に有効なFirebase設定を構成してください。
-   - `.env` ファイルに `GEMINI_API_KEY` を設定してください。
-4. **開発サーバーの起動**:
-   ```bash
-   npm run dev
-   ```
+データはローカルの SQLite（`data/sales.db`）に永続化されるため、外部サービスに依存せず社内で長期運用できます。
 
 ---
 
-## English Overview
+## 目次
 
-SalesFocus AI is a sales support dashboard that visualizes performance, tracks progress in real-time, and provides personalized AI-driven improvement suggestions.
+- [特徴](#特徴)
+- [画面構成](#画面構成)
+- [アーキテクチャ](#アーキテクチャ)
+- [セットアップ](#セットアップ)
+- [起動](#起動)
+- [使い方](#使い方)
+- [Notion連携の設定](#notion連携の設定)
+- [データモデル](#データモデル)
+- [API一覧](#api一覧)
+- [ディレクトリ構成](#ディレクトリ構成)
+- [バックアップと復元](#バックアップと復元)
+- [トラブルシューティング](#トラブルシューティング)
+- [FAQ](#faq)
 
-### Key Features
-- **Dashboard**: Real-time visualization of conversion rates and revenue.
-- **Entries**: Smart achievement input linked to logged-in users.
-- **Performance**: Detailed weekly/monthly tracking and target setting.
-- **AI Analysis**: Personalized improvement tips powered by Google Gemini.
-- **Master Data**: Management of products and members with email authentication.
+---
 
-### Tech Stack
-- Frontend: React, TypeScript, Tailwind CSS, Lucide React, Framer Motion
-- Backend/DB: Firebase (Auth, Firestore)
-- AI: Google Gemini API
+## 特徴
+
+- **目標はExcelから一括取込** — 既存の `営業計画_目標_統合版.xlsx`（個別管理 / IS管理シート）をそのまま読み込み、メンバー別・チャネル別の月次目標に展開。
+- **実績はNotionから自動集計** — 「DB05_案件（CRM）」「DB06_活動（CRM）」から受注数・MRR・パイプライン・架電/通電/商談数を取得。
+- **Notion無しでも運用可能** — 受注・活動・IS実績をアプリ上で手入力できる。手入力値はNotion同期で**上書きされない**（手入力優先）。
+- **ダッシュボード** — 月次の目標 vs 実績、メンバー別・プロダクト別、案件パイプラインを可視化。
+- **ローカル完結・永続化** — SQLite 1ファイルに保存。バックアップはファイルコピーのみ。
+- **カラーテーマ** — Slack風の配色プリセット8種をヘッダーの🎨から切替（ブラウザに保存）。
+
+---
+
+## 画面構成
+
+| ページ | 役割 |
+|--------|------|
+| **ダッシュボード** | 月次の目標 vs 実績（KPI / メンバー別グラフ / プロダクト別 / 案件パイプライン） |
+| **目標管理** | Excelからの目標取込・個別編集（契約数 / 必要トライアル / 必要商談） |
+| **受注・活動実績** | メンバー×プロダクトの契約数・MRR、メンバー別の架電/通電/商談/FAXを手入力 |
+| **IS実績入力** | インサイドセールスのチャネル別アポ数・コール/送付数・予算消化を手入力 |
+| **Notion同期** | 案件・活動CRMからの実績取得、同期ログの確認 |
+| **マスタ管理** | プロダクト（名称変更・追加・削除）とメンバー（氏名・略称・役割・Notion紐付け）の管理 |
+
+---
+
+## アーキテクチャ
+
+```
+                 ┌──────────────────────────────────────────┐
+                 │            ブラウザ (React + Vite)         │
+                 │   ダッシュボード / 目標 / 実績 / 同期 ...    │
+                 └───────────────────┬──────────────────────┘
+                                     │ /api/*  (Viteプロキシ → 8787)
+                 ┌───────────────────▼──────────────────────┐
+                 │        Express API (server/)              │
+                 │  ┌─────────┐ ┌──────────┐ ┌────────────┐  │
+   Excel ───────▶│  │excel.ts │ │ index.ts │ │ notion.ts  │◀─┼─── Notion API
+ (目標取込)       │  └─────────┘ └────┬─────┘ └────────────┘  │   (案件/活動CRM)
+                 │                    │                      │
+                 │            ┌───────▼────────┐             │
+                 │            │  SQLite (db.ts) │             │
+                 │            │  data/sales.db  │             │
+                 │            └────────────────┘             │
+                 └──────────────────────────────────────────┘
+```
+
+- **フロント**: React 19 + TypeScript + Vite + Tailwind CSS + Recharts（開発: ポート **5180**）
+- **API**: Express + better-sqlite3（開発: ポート **8787**）
+- **連携**: `@notionhq/client`（Notion）/ `exceljs`（Excel）
+
+---
+
+## セットアップ
+
+### 前提
+- Node.js 18 以上（推奨 20+）
+- macOS / Linux（better-sqlite3 はインストール時にネイティブビルドされます）
+
+### 手順
+```bash
+cd ~/SalesFocus-AI
+npm install
+cp .env.example .env   # 初回のみ。中身を環境に合わせて編集
+```
+
+### `.env` の設定
+
+| 変数 | 必須 | 説明 |
+|------|:---:|------|
+| `NOTION_API_KEY` | 任意 | Notionインテグレーションのトークン。空でも起動可（同期のみ無効） |
+| `NOTION_DEALS_DB_ID` | 任意 | 案件CRMのデータベースID（既定値設定済み） |
+| `NOTION_ACTIVITIES_DB_ID` | 任意 | 活動CRMのデータベースID（既定値設定済み） |
+| `API_PORT` | 任意 | バックエンドAPIのポート（既定 `8787`） |
+| `TARGET_EXCEL_PATH` | 任意 | 目標Excelの絶対パス。「Excelから再インポート」で使用 |
+
+> `.env` は `.gitignore` 済み。トークンや絶対パスがコミットされることはありません。
+
+---
+
+## 起動
+
+### 開発（ホットリロード）
+```bash
+npm run dev
+```
+- フロント: **http://localhost:5180**
+- API: http://localhost:8787
+
+### 本番風（1コマンド・単一ポート）
+ビルド済みフロントをAPIサーバーが配信します。常時起動・社内運用向け。
+```bash
+npm run build
+npm start             # http://localhost:8787 で全機能
+```
+
+### その他
+```bash
+npm run typecheck     # フロント・バックエンドの型チェック
+```
+
+---
+
+## 使い方
+
+1. **目標管理** → 「Excelから再インポート」で目標を取込（`.env` の `TARGET_EXCEL_PATH` を読む）。値はその場で編集・保存も可能。
+2. **受注・活動実績** → メンバー×プロダクトの契約数・MRR、メンバー別の架電/通電/商談/FAXを手入力。**Notionが無くてもここで実績管理が完結します。**
+3. **IS実績入力** → チャネル別にアポ数・コール/送付数・予算消化を手入力。
+4. **Notion同期** → 「今すぐ同期」で案件・活動から実績を取得（`NOTION_API_KEY` 設定後に有効）。
+5. **ダッシュボード** → 月次の目標 vs 実績を確認。
+6. **メンバー** → 氏名・略称・役割の管理。Notionの担当者氏名と一致させると同期時に自動マッチ。
+
+### 運用パターン
+- **Notion無し（完全手入力）**: 目標管理でExcel取込 → 受注・活動実績／IS実績入力で毎月手入力 → ダッシュボードで確認。
+- **Notion連携（推奨）**: 受注・MRR・架電/商談はNotion同期で自動。アプリ手入力は補正したいセルだけ。
+
+---
+
+## Notion連携の設定
+
+1. https://www.notion.so/my-integrations で「New integration」を作成し、**Internal Integration Token** を取得。
+2. Notionで案件CRM・活動CRMのあるページを開き、`•••` → **Connections** → 作成したインテグレーションを接続。
+3. トークンを `.env` の `NOTION_API_KEY` に設定し、サーバーを再起動（`npm run dev`）。
+4. アプリの「Notion同期」→「今すぐ同期」を実行。
+
+**同期で取り込まれる値**
+
+| 指標 | 取得元 | 条件 |
+|------|--------|------|
+| 契約数・MRR | 案件CRM | 営業ステータス=契約、受注日の月で集計 |
+| パイプライン | 案件CRM | 営業ステータス別の件数・MRRスナップショット |
+| 架電数 | 活動CRM | 活動タイプ=電話 かつ 通話方向=発信 |
+| 通電数 | 活動CRM | 上記のうち 通話結果=応答済み/接続済み |
+| FAX数 | 活動CRM | 活動タイプ=FAX送信 |
+| 商談数 | 活動CRM | 活動タイプ=商談議事録 または 商談種別=営業商談 |
+
+> アポ数はNotionに日付付きの起点が無いため、IS実績入力で手入力します。
+
+---
+
+## データモデル
+
+各テーブルは「所有者」を1つに固定し、更新衝突を防いでいます。Notion同期は **Notion由来の行のみ** を置き換え、手入力（`source='manual'`）の行は保護します。
+
+| テーブル | 所有者 | 内容 |
+|----------|--------|------|
+| `members` | アプリ | メンバー（氏名・略称・役割・Notion紐付） |
+| `products` | アプリ | プロダクト（ながらかいご議事録 / 記録 / インカム）。マスタ管理で追加・改名・削除可 |
+| `targets` | Excel | メンバー×プロダクト×月 の目標（契約数 / 必要トライアル / 必要商談） |
+| `is_targets` | Excel | チャネル×月 のIS目標（アポ / コール / 予算） |
+| `actuals` | Notion / 手入力 | メンバー×プロダクト×月 の受注実績・MRR |
+| `activity_actuals` | Notion / 手入力 | メンバー×月 の架電 / 通電 / FAX / 商談数 |
+| `pipeline` | Notion | 営業ステータス別の件数・MRRスナップショット |
+| `is_actuals` | 手入力 | チャネル×月 のIS実績 |
+| `sync_log` | アプリ | Excel取込・Notion同期の履歴 |
+
+---
+
+## API一覧
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/api/meta` | メンバー・プロダクト・月一覧・設定状態 |
+| GET | `/api/dashboard?month=YYYY-MM` | ダッシュボード集計 |
+| GET / PUT | `/api/targets` | 目標の取得 / 保存 |
+| POST | `/api/import/excel` | Excelから目標をインポート |
+| GET | `/api/actuals?month=YYYY-MM` | 受注・活動実績の取得 |
+| PUT | `/api/actuals` | 受注実績の手入力保存 |
+| PUT | `/api/activity` | 活動実績の手入力保存 |
+| GET / PUT | `/api/is` , `/api/is/actual` | IS目標の取得 / IS実績の保存 |
+| POST | `/api/notion/sync` | Notion同期の実行 |
+| GET | `/api/sync-log` | 同期ログ（直近20件） |
+| GET / POST / PUT | `/api/members` | メンバーの取得 / 追加 / 更新 |
+| GET / POST / PUT / DELETE | `/api/products` | プロダクトの取得 / 追加 / 更新 / 削除 |
+
+---
+
+## ディレクトリ構成
+
+```
+SalesFocus-AI/
+├── server/                 # Express + SQLite バックエンド
+│   ├── index.ts            # APIエントリ・ルーティング・静的配信
+│   ├── db.ts               # SQLiteスキーマ・初期シード
+│   ├── excel.ts            # 目標Excelのパース
+│   └── notion.ts           # Notion同期・集計ロジック
+├── src/                    # React フロントエンド
+│   ├── App.tsx             # レイアウト・ルーティング・状態
+│   ├── pages/              # 各画面
+│   ├── components/         # 共通UI（Card / Badge / KpiCard 等）
+│   └── lib/                # APIクライアント・ユーティリティ
+├── data/                   # SQLite（sales.db）※gitignore
+├── .env.example            # 環境変数テンプレート
+└── README.md
+```
+
+---
+
+## バックアップと復元
+
+- **バックアップ**: `data/sales.db` をコピーするだけで全データの完全バックアップになります。
+  ```bash
+  cp data/sales.db ~/backups/sales-$(date +%Y%m%d).db
+  ```
+- **復元**: コピーしたファイルを `data/sales.db` に戻すだけ。
+- WALモード使用のため `sales.db-wal` / `sales.db-shm` も同時に存在しますが、サーバー停止後は `sales.db` 単体で完結します。
+
+---
+
+## トラブルシューティング
+
+| 症状 | 対処 |
+|------|------|
+| プレビュー/ブラウザに別アプリ（KeyFlow等）が表示される | ポート3000を常駐アプリが占有しているため、本アプリは **5180** を使用します。`http://localhost:5180` を開いてください。 |
+| `npm install` で better-sqlite3 がエラー | Node のバージョンを確認（18+）。`npm rebuild better-sqlite3` を実行。 |
+| 「Excelから再インポート」でファイルが見つからない | `.env` の `TARGET_EXCEL_PATH` を実ファイルの絶対パスに合わせる。 |
+| Notion同期で「メンバー未マッチ」と出る | メンバー画面で氏名をNotionの担当者名に合わせる（一度マッチすると以降は自動）。 |
+| ポート8787が使用中 | `.env` の `API_PORT` を変更し、`vite.config.ts` のプロキシ先も合わせる。 |
+
+---
+
+## FAQ
+
+**Q. 社員にも入力してもらう必要がありますか？**
+A. いりません。社員はNotionで案件管理するだけ。本アプリは管理者がNotion同期＋必要箇所の手入力で集計します。
+
+**Q. Notionを使わずに運用できますか？**
+A. できます。「受注・活動実績」「IS実績入力」で手入力すればダッシュボードに反映されます。
+
+**Q. 目標を途中で変えたくなったら？**
+A. Excelを更新して「再インポート」するか、目標管理ページで直接編集できます。
+
+**Q. 手入力した実績がNotion同期で消えませんか？**
+A. 消えません。手入力（`source='manual'`）の行は同期で保護されます。

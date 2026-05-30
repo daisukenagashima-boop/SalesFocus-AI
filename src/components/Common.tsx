@@ -9,19 +9,19 @@ export function SidebarLink({ to, icon: Icon, label, active }: { to: string, ico
       to={to}
       className={cn(
         "flex items-center gap-3 px-3 py-2 rounded transition-all duration-150 group relative overflow-hidden",
-        active 
-          ? "bg-brand-midnight text-white shadow-md shadow-brand-midnight/20" 
-          : "text-brand-muted hover:bg-slate-100 hover:text-brand-text"
+        active
+          ? "bg-sidebar-active text-sidebar-active-fg shadow-md"
+          : "text-sidebar-fg hover:bg-sidebar-hover"
       )}
     >
-      <Icon className={cn("w-4 h-4 shrink-0 transition-transform group-hover:scale-110", active ? "text-white" : "text-brand-muted group-hover:text-brand-midnight")} />
+      <Icon className={cn("w-4 h-4 shrink-0 transition-transform group-hover:scale-110", active ? "text-sidebar-active-fg" : "text-sidebar-fg")} />
       <span className="text-[11px] font-bold uppercase tracking-tight truncate">{label}</span>
       {active && (
-        <motion.div 
+        <motion.div
           layoutId="active-indicator"
           className="ml-auto"
         >
-          <ChevronRight className="w-3 h-3 text-white/50" />
+          <ChevronRight className="w-3 h-3 text-sidebar-active-fg opacity-60" />
         </motion.div>
       )}
     </Link>
@@ -56,6 +56,22 @@ export function Card({ children, title, subtitle, icon: Icon, className, headerA
       <div className={cn("flex-1", noPadding ? "" : "p-5")}>
         {children}
       </div>
+    </div>
+  );
+}
+
+interface ProgressBarProps {
+  percent: number;
+  barClass?: string;
+  thickness?: 'thin' | 'normal' | 'thick';
+  className?: string;
+}
+export function ProgressBar({ percent, barClass = 'bg-brand-midnight', thickness = 'normal', className }: ProgressBarProps) {
+  const h = thickness === 'thin' ? 'h-1.5' : thickness === 'thick' ? 'h-3' : 'h-2';
+  const clamped = Math.max(0, Math.min(100, percent));
+  return (
+    <div className={cn('w-full bg-slate-100 rounded-full overflow-hidden', h, className)}>
+      <div className={cn('h-full rounded-full transition-all duration-300', barClass)} style={{ width: `${clamped}%` }} />
     </div>
   );
 }
