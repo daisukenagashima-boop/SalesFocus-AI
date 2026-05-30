@@ -4,6 +4,9 @@ import { db } from './db.js';
 const DEALS_DB = process.env.NOTION_DEALS_DB_ID || 'b2eaa45a-3f13-83bc-bb6e-812739cff3a5';
 const ACT_DB = process.env.NOTION_ACTIVITIES_DB_ID || 'c80aa45a-3f13-839c-b0be-019a9989992e';
 
+// 受注として集計する営業ステータス
+const CONTRACTED_STATUSES = new Set(['契約', '契約準備中']);
+
 export function notionConfigured() {
   return Boolean(process.env.NOTION_API_KEY);
 }
@@ -104,7 +107,7 @@ export async function syncNotion(): Promise<SyncResult> {
     pipe.mrr += mrr;
     pipeAgg.set(status, pipe);
 
-    if (status !== '契約') continue;
+    if (!CONTRACTED_STATUSES.has(status)) continue;
     const close = dateProp(p, '受注日');
     if (!close) continue;
     const month = close.slice(0, 7);
